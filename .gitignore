@@ -1,0 +1,8 @@
+.vscode
+.claude
+node_modules
+
+artifacts/
+manifests/latest.yaml
+
+decker.ts
