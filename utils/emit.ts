@@ -35,12 +35,10 @@ export async function emit(name: string, recipe: Recipe) {
   const localDocs = renderLocal(recipe);
   const localBody = localDocs.map((d) => stringify(d, yamlOpts)).join("---\n");
   await Deno.writeTextFile(`${outDir}/local.yaml`, localBody);
-  console.log(`wrote ${outDir}/local.yaml`);
 
   const deployFiles = renderDeploy(recipe);
   for (const f of deployFiles) {
     const body = f.docs.map((d) => stringify(d, yamlOpts)).join("---\n");
     await Deno.writeTextFile(`${outDir}/deploy/${f.filename}`, body);
-    console.log(`wrote ${outDir}/deploy/${f.filename}`);
   }
 }

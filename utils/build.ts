@@ -25,33 +25,22 @@ export function artifactsHostPath(recipe: Recipe): string {
   return isAbsolute(p) ? p : join(REPO_ROOT, p);
 }
 
-export async function generateArtifacts(recipe: Recipe): Promise<number> {
+export async function generateArtifacts(recipe: Recipe) {
   const out = artifactsHostPath(recipe);
   try {
     await Deno.remove(out, { recursive: true });
   } catch (e) {
     if (!(e instanceof Deno.errors.NotFound)) throw e;
   }
-  console.log(`builder-playground start ${recipe.artifacts} --dry-run --output ${out}`);
-  const { code } = await new Deno.Command("builder-playground", {
+  return await new Deno.Command("builder-playground", {
     args: ["start", recipe.artifacts, "--dry-run", "--output", out],
-    stdout: "inherit",
+    stdout: "piped",
     stderr: "inherit",
-  }).spawn().status;
-  return code;
+  }).output();
 }
 
 export async function buildOne(target: string): Promise<string> {
   const { name, recipe } = await loadRecipe(target);
   await emit(name, recipe);
   return name;
-}
-
-export async function buildAll(): Promise<string[]> {
-  const names: string[] = [];
-  for await (const entry of Deno.readDir(RECIPES_DIR)) {
-    if (!entry.isFile || !entry.name.endsWith(".ts")) continue;
-    names.push(await buildOne(entry.name.slice(0, -3)));
-  }
-  return names;
 }
