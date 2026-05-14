@@ -18,7 +18,7 @@ if (local && local !== me) {
 const main = new Command()
   .name("decker")
   .version("0.1.0")
-  .description("Decker — devnet recipe renderer");
+  .description("Decker — deck your own devnet");
 
 const commandsDir = new URL("./commands/", import.meta.url);
 for await (const entry of Deno.readDir(commandsDir)) {

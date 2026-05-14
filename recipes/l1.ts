@@ -21,5 +21,11 @@ export const recipe: Recipe = {
         { name: "validator-1", prototype: "lighthouse-validator", refs: { beacon: "beacon-1" } },
       ],
     },
+    {
+      name: "mev-boost-relay-1",
+      containers: [
+        { name: "mev-boost-relay-1", prototype: "mev-boost-relay", refs: { beacon: "beacon-1" } },
+      ],
+    },
   ],
 };

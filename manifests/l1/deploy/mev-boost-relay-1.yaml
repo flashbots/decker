@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mev-boost-relay-1
+  labels:
+    app.kubernetes.io/name: mev-boost-relay-1
+    app.kubernetes.io/part-of: decker-l1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mev-boost-relay-1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mev-boost-relay-1
+        app.kubernetes.io/part-of: decker-l1
+    spec:
+      containers:
+        - name: mev-boost-relay-1
+          image: 'docker.io/flashbots/playground-utils:cc6f172493d7ef6b88a5b7895f4b8619806c99f9'
+          command:
+            - mev-boost-relay
+          args:
+            - '--api-listen-addr'
+            - 0.0.0.0
+            - '--api-listen-port'
+            - '5555'
+            - '--beacon-client-addr'
+            - 'http://beacon-1:3500'
+          env:
+            - name: ALLOW_SYNCING_BEACON_NODE
+              value: '1'
+          ports:
+            - name: http
+              containerPort: 5555
+          volumeMounts: []
+      volumes: []
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mev-boost-relay-1
+  labels:
+    app.kubernetes.io/name: mev-boost-relay-1
+    app.kubernetes.io/part-of: decker-l1
+spec:
+  selector:
+    app.kubernetes.io/name: mev-boost-relay-1
+  ports:
+    - name: http
+      port: 5555
+      targetPort: http

@@ -197,6 +197,36 @@ spec:
 apiVersion: v1
 kind: Pod
 metadata:
+  name: mev-boost-relay-1
+  labels:
+    app: mev-boost-relay-1
+spec:
+  restartPolicy: OnFailure
+  containers:
+    - name: mev-boost-relay-1
+      image: 'docker.io/flashbots/playground-utils:cc6f172493d7ef6b88a5b7895f4b8619806c99f9'
+      command:
+        - mev-boost-relay
+      args:
+        - '--api-listen-addr'
+        - 0.0.0.0
+        - '--api-listen-port'
+        - '5555'
+        - '--beacon-client-addr'
+        - 'http://beacon-1:3500'
+      env:
+        - name: ALLOW_SYNCING_BEACON_NODE
+          value: '1'
+      ports:
+        - name: http
+          containerPort: 5555
+          hostPort: 5555
+      volumeMounts: []
+  volumes: []
+---
+apiVersion: v1
+kind: Pod
+metadata:
   name: dozzle
   labels:
     app: dozzle
