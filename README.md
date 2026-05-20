@@ -90,6 +90,7 @@ We eliminate this friction by inverting the approach:
 - [ ] More recipes (e.g. opstack)
 - [ ] Observability tools
 - [ ] Support host binaries
+- [ ] Custom configuration steps
 - [ ] Standalone decker.ts file for projects
 - [ ] Feature documentation
 - [ ] Experiment/alternatives documentation

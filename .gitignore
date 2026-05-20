@@ -4,5 +4,6 @@ node_modules
 
 artifacts/
 manifests/latest.yaml
+bin/
 
 decker.ts
