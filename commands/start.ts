@@ -4,10 +4,9 @@ import { lookup } from "../utils/resolve.ts";
 import { portNum } from "../utils/types.ts";
 import { bold, cyan, dim, yellow } from "../utils/term.ts";
 import { down } from "./down.ts";
-import { printDozzle, up } from "./up.ts";
+import { printDozzle, resolveTarget, runManifest, upTarget } from "./up.ts";
 
 async function advertise(target: string) {
-  if (target.endsWith(".yaml")) return;
   const { recipe } = await loadRecipe(target);
   console.log("");
   for (const pod of recipe.pods) {
@@ -28,11 +27,19 @@ async function advertise(target: string) {
 
 export const command = new Command()
   .description("Up a recipe, advertise ports, and down on Ctrl+C")
-  .arguments("<target:string>")
-  .action(async (_, target: string) => {
-    const code = await up(target);
+  .arguments("[target:string]")
+  .action(async (_, target?: string) => {
+    const t = await resolveTarget(target);
+    if (t.kind === "manifest") {
+      const noop = () => {};
+      Deno.addSignalListener("SIGINT", noop);
+      Deno.addSignalListener("SIGTERM", noop);
+      Deno.exit(await runManifest("start", t.path));
+    }
+
+    const code = await upTarget(t.kind === "recipe" ? t.target : t.path);
     if (code !== 0) Deno.exit(code);
-    await advertise(target);
+    if (t.kind === "recipe") await advertise(t.target);
 
     let downing = false;
     const stop = async () => {
