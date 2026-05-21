@@ -56,7 +56,7 @@ export async function clone(p: DeckerProject): Promise<void> {
   console.log(`${dim("→")} cloning ${bold(src)}${dim(`@${ref}`)} → ${cyan(dst)}`);
   const t0 = performance.now();
   const { code } = await new Deno.Command("git", {
-    args: ["clone", "--depth", "1", "--branch", ref, src, dst],
+    args: ["clone", "--quiet", "--depth", "1", "--branch", ref, src, dst],
     stdout: "inherit",
     stderr: "inherit",
   }).output();
