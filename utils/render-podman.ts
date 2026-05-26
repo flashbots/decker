@@ -1,11 +1,11 @@
-import { findContainer, lookup, makeCtx } from "./resolve.ts";
+import { findComponent, lookup, makeCtx } from "./resolve.ts";
 import { portNum, portProtocol } from "./types.ts";
 import type { ConfigFile, Ctx, Pod, Ports, Recipe, Volume, VolumeMount } from "./types.ts";
 
 export const DOZZLE_PORT = 18080;
 
-export function renderLocal(recipe: Recipe): unknown[] {
-  const ctx = makeCtx(recipe, (name) => findContainer(recipe, name).pod.name);
+export function renderPodman(recipe: Recipe): unknown[] {
+  const ctx = makeCtx(recipe, (loc) => hostFor(loc));
   const docs: unknown[] = [];
   for (const pod of recipe.pods) {
     const { configMaps, pod: podDoc } = podDocs(pod, recipe, ctx);
@@ -13,6 +13,11 @@ export function renderLocal(recipe: Recipe): unknown[] {
   }
   docs.push(dozzlePod());
   return docs;
+}
+
+function hostFor(loc: ReturnType<typeof findComponent>): string {
+  if (loc.kind === "process") return "host.containers.internal";
+  return loc.pod.name;
 }
 
 function dozzlePod() {
@@ -45,7 +50,9 @@ function podDocs(pod: Pod, recipe: Recipe, ctx: Ctx) {
   let hasArtifacts = false;
 
   for (const def of pod.containers) {
-    const built = lookup(def.prototype).build(def, ctx);
+    const proto = lookup(def.prototype);
+    if (!proto.buildContainer) throw new Error(`container ${def.name} has no buildContainer()`);
+    const built = proto.buildContainer(def, ctx);
     const c = built.container;
     const vols = built.volumes ?? [];
     const volByName = new Map(vols.map((v) => [v.name, v]));
@@ -62,11 +69,11 @@ function podDocs(pod: Pod, recipe: Recipe, ctx: Ctx) {
       if (v.kind === "shared-readonly") hasArtifacts = true;
     }
 
-    const localMounts = (c.volumeMounts ?? []).map((m) => rewriteLocalMount(m, volByName));
+    const podmanMounts = (c.volumeMounts ?? []).map((m) => rewritePodmanMount(m, volByName));
     const configMountName = `${def.name}-config`;
     const configs = built.configs ?? [];
     for (const cf of configs) {
-      localMounts.push({
+      podmanMounts.push({
         name: configMountName,
         mountPath: cf.mountPath,
         subPath: cf.filename,
@@ -81,7 +88,7 @@ function podDocs(pod: Pod, recipe: Recipe, ctx: Ctx) {
       });
     }
 
-    const ports = expandLocalPorts(c.ports);
+    const ports = expandPodmanPorts(c.ports);
     const env = expandEnv(c.env);
     containers.push({
       name: def.name,
@@ -90,7 +97,7 @@ function podDocs(pod: Pod, recipe: Recipe, ctx: Ctx) {
       ...(c.args ? { args: c.args } : {}),
       ...(env.length > 0 ? { env } : {}),
       ...(ports.length > 0 ? { ports } : {}),
-      volumeMounts: localMounts,
+      volumeMounts: podmanMounts,
     });
   }
 
@@ -140,7 +147,7 @@ function expandEnv(env: Record<string, string> | undefined) {
   return Object.entries(env).map(([name, value]) => ({ name, value }));
 }
 
-function expandLocalPorts(ports: Ports | undefined) {
+function expandPodmanPorts(ports: Ports | undefined) {
   if (!ports) return [];
   return Object.entries(ports).map(([name, spec]) => {
     const containerPort = portNum(spec);
@@ -154,7 +161,7 @@ function expandLocalPorts(ports: Ports | undefined) {
   });
 }
 
-function rewriteLocalMount(m: VolumeMount, vols: Map<string, Volume>) {
+function rewritePodmanMount(m: VolumeMount, vols: Map<string, Volume>) {
   const v = vols.get(m.name);
   if (!v) return m;
   if (v.kind === "shared-readonly") {

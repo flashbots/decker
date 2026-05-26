@@ -2,7 +2,7 @@ import { basename, fromFileUrl, isAbsolute, join, toFileUrl } from "jsr:@std/pat
 import { emit } from "./emit.ts";
 import type { Recipe } from "./types.ts";
 
-const REPO_ROOT = new URL("../", import.meta.url).pathname;
+const DECKER_ROOT = new URL("../", import.meta.url).pathname.replace(/\/$/, "");
 const RECIPES_DIR = new URL("../recipes/", import.meta.url);
 
 export async function loadRecipe(target: string): Promise<{ name: string; recipe: Recipe }> {
@@ -21,8 +21,8 @@ export async function loadRecipe(target: string): Promise<{ name: string; recipe
 }
 
 export function artifactsHostPath(recipe: Recipe): string {
-  const p = recipe.artifactsHostPath ?? "artifacts";
-  return isAbsolute(p) ? p : join(REPO_ROOT, p);
+  const p = recipe.artifactsHostPath ?? ".runtime/artifacts";
+  return isAbsolute(p) ? p : join(DECKER_ROOT, p);
 }
 
 export async function generateArtifacts(recipe: Recipe) {
@@ -39,8 +39,37 @@ export async function generateArtifacts(recipe: Recipe) {
   }).output();
 }
 
-export async function buildOne(target: string): Promise<string> {
+export async function buildOne(target: string): Promise<{ name: string; binaries: string[] }> {
   const { name, recipe } = await loadRecipe(target);
-  await emit(name, recipe);
-  return name;
+  const { binaries } = await emit(name, recipe);
+  return { name, binaries };
+}
+
+export function missingBinaries(binaries: string[]): string[] {
+  const missing: string[] = [];
+  for (const b of binaries) {
+    const resolved = b.replaceAll("${DECKER_ROOT}", DECKER_ROOT);
+    if (resolved.includes("/")) {
+      try {
+        Deno.statSync(resolved);
+      } catch {
+        if (!missing.includes(b)) missing.push(b);
+      }
+    } else {
+      if (!onPath(resolved) && !missing.includes(b)) missing.push(b);
+    }
+  }
+  return missing;
+}
+
+function onPath(name: string): boolean {
+  const path = Deno.env.get("PATH") ?? "";
+  for (const dir of path.split(":")) {
+    if (!dir) continue;
+    try {
+      const stat = Deno.statSync(`${dir}/${name}`);
+      if (stat.isFile) return true;
+    } catch { /* keep looking */ }
+  }
+  return false;
 }

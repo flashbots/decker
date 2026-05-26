@@ -1,8 +1,8 @@
-import type { BuildResult, ContainerDef, Ctx } from "../utils/types.ts";
+import type { ContainerResult, ContainerDef, Ctx } from "../utils/types.ts";
 
 export const ports = {};
 
-export function build(def: ContainerDef, ctx: Ctx): BuildResult {
+export function buildContainer(def: ContainerDef, ctx: Ctx): ContainerResult {
   const beacon = def.refs?.beacon;
   if (!beacon) throw new Error(`validator ${def.name}: missing refs.beacon`);
   return {

@@ -1,10 +1,10 @@
-import type { BuildResult, ContainerDef, Ctx } from "../utils/types.ts";
+import type { ContainerResult, ContainerDef, Ctx } from "../utils/types.ts";
 
 export const ports = {
   ready: 21171,
 };
 
-export function build(def: ContainerDef, ctx: Ctx): BuildResult {
+export function buildContainer(def: ContainerDef, ctx: Ctx): ContainerResult {
   const target = def.refs?.target;
   if (!target) throw new Error(`healthmon ${def.name}: missing refs.target`);
   const mode = def.config?.mode as string | undefined;

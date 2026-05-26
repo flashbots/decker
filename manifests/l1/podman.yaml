@@ -1,0 +1,249 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: el-1
+  labels:
+    app: el-1
+spec:
+  restartPolicy: OnFailure
+  containers:
+    - name: el-1
+      image: 'ghcr.io/paradigmxyz/reth:v1.9.3'
+      command:
+        - /usr/local/bin/reth
+      args:
+        - node
+        - '--chain'
+        - /artifacts/genesis.json
+        - '--datadir'
+        - /data_reth
+        - '--color'
+        - never
+        - '--addr'
+        - 0.0.0.0
+        - '--port'
+        - '30303'
+        - '--ipcpath'
+        - /data_reth/reth.ipc
+        - '--http'
+        - '--http.addr'
+        - 0.0.0.0
+        - '--http.api'
+        - 'admin,eth,web3,net,rpc,mev,flashbots'
+        - '--http.port'
+        - '8545'
+        - '--authrpc.port'
+        - '8551'
+        - '--authrpc.addr'
+        - 0.0.0.0
+        - '--authrpc.jwtsecret'
+        - /artifacts/jwtsecret
+        - '--metrics'
+        - '0.0.0.0:9090'
+        - '--engine.persistence-threshold'
+        - '0'
+        - '--engine.memory-block-buffer-target'
+        - '0'
+        - '-vvv'
+        - '--disable-discovery'
+      ports:
+        - name: rpc
+          containerPort: 8545
+          hostPort: 8545
+        - name: authrpc
+          containerPort: 8551
+          hostPort: 8551
+        - name: metrics
+          containerPort: 9090
+          hostPort: 9090
+      volumeMounts:
+        - name: artifacts
+          mountPath: /artifacts
+          readOnly: true
+        - name: data
+          mountPath: /data_reth
+  volumes:
+    - name: artifacts
+      hostPath:
+        path: '${DECKER_ROOT}/.runtime/artifacts'
+        type: Directory
+    - name: data
+      emptyDir: {}
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: beacon-1
+  labels:
+    app: beacon-1
+spec:
+  restartPolicy: OnFailure
+  containers:
+    - name: beacon-1
+      image: 'docker.io/sigp/lighthouse:v8.1.0'
+      command:
+        - lighthouse
+      args:
+        - bn
+        - '--datadir'
+        - /data_beacon
+        - '--testnet-dir'
+        - /artifacts/testnet
+        - '--enable-private-discovery'
+        - '--disable-peer-scoring'
+        - '--staking'
+        - '--enr-address'
+        - 127.0.0.1
+        - '--enr-udp-port'
+        - '9000'
+        - '--enr-tcp-port'
+        - '9000'
+        - '--enr-quic-port'
+        - '9100'
+        - '--port'
+        - '9000'
+        - '--quic-port'
+        - '9100'
+        - '--http'
+        - '--http-port'
+        - '3500'
+        - '--http-address'
+        - 0.0.0.0
+        - '--http-allow-origin'
+        - '*'
+        - '--disable-packet-filter'
+        - '--target-peers'
+        - '0'
+        - '--execution-endpoint'
+        - 'http://el-1:8551'
+        - '--execution-jwt'
+        - /artifacts/jwtsecret
+        - '--always-prepare-payload'
+        - '--prepare-payload-lookahead'
+        - '8000'
+        - '--suggested-fee-recipient'
+        - '0x690B9A9E9aa1C9dB991C7721a92d351Db4FaC990'
+        - '--libp2p-addresses'
+        - ''
+      ports:
+        - name: http
+          containerPort: 3500
+          hostPort: 3500
+        - name: p2p-tcp
+          containerPort: 9000
+          hostPort: 9000
+          protocol: TCP
+        - name: p2p-udp
+          containerPort: 9000
+          hostPort: 9000
+          protocol: UDP
+        - name: quic
+          containerPort: 9100
+          hostPort: 9100
+          protocol: UDP
+      volumeMounts:
+        - name: artifacts
+          mountPath: /artifacts
+          readOnly: true
+        - name: data
+          mountPath: /data_beacon
+  volumes:
+    - name: artifacts
+      hostPath:
+        path: '${DECKER_ROOT}/.runtime/artifacts'
+        type: Directory
+    - name: data
+      emptyDir: {}
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: validator-1
+  labels:
+    app: validator-1
+spec:
+  restartPolicy: OnFailure
+  containers:
+    - name: validator-1
+      image: 'docker.io/sigp/lighthouse:v8.1.0'
+      command:
+        - lighthouse
+      args:
+        - vc
+        - '--datadir'
+        - /data_validator
+        - '--testnet-dir'
+        - /artifacts/testnet
+        - '--init-slashing-protection'
+        - '--beacon-nodes'
+        - 'http://beacon-1:3500'
+        - '--suggested-fee-recipient'
+        - '0x690B9A9E9aa1C9dB991C7721a92d351Db4FaC990'
+        - '--builder-proposals'
+        - '--prefer-builder-proposals'
+      volumeMounts:
+        - name: artifacts
+          mountPath: /artifacts
+          readOnly: true
+        - name: artifacts
+          mountPath: /data_validator
+          subPath: data_validator
+  volumes:
+    - name: artifacts
+      hostPath:
+        path: '${DECKER_ROOT}/.runtime/artifacts'
+        type: Directory
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: mev-boost-relay-1
+  labels:
+    app: mev-boost-relay-1
+spec:
+  restartPolicy: OnFailure
+  containers:
+    - name: mev-boost-relay-1
+      image: 'docker.io/flashbots/playground-utils:cc6f172493d7ef6b88a5b7895f4b8619806c99f9'
+      command:
+        - mev-boost-relay
+      args:
+        - '--api-listen-addr'
+        - 0.0.0.0
+        - '--api-listen-port'
+        - '5555'
+        - '--beacon-client-addr'
+        - 'http://beacon-1:3500'
+      env:
+        - name: ALLOW_SYNCING_BEACON_NODE
+          value: '1'
+      ports:
+        - name: http
+          containerPort: 5555
+          hostPort: 5555
+      volumeMounts: []
+  volumes: []
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: dozzle
+  labels:
+    app: dozzle
+spec:
+  restartPolicy: OnFailure
+  containers:
+    - name: dozzle
+      image: 'docker.io/amir20/dozzle:latest'
+      ports:
+        - name: http
+          containerPort: 8080
+          hostPort: 18080
+      volumeMounts:
+        - name: podman-sock
+          mountPath: /var/run/docker.sock
+  volumes:
+    - name: podman-sock
+      hostPath:
+        path: /run/user/1000/podman/podman.sock
+        type: Socket

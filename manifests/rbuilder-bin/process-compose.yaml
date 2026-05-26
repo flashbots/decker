@@ -1,0 +1,37 @@
+version: '0.5'
+processes:
+  el-1:
+    command: |-
+      '${DECKER_ROOT}/bin/reth' \
+        node \
+        --chain '${DECKER_ROOT}/.runtime/artifacts/genesis.json' \
+        --datadir '${DECKER_ROOT}/.runtime/data/el-1/data' \
+        --color never \
+        --addr 0.0.0.0 \
+        --port 30303 \
+        --ipcpath '${DECKER_ROOT}/.runtime/data/el-1/data/reth.ipc' \
+        --http \
+        --http.addr 0.0.0.0 \
+        --http.api admin,eth,web3,net,rpc,mev,flashbots \
+        --http.port 8545 \
+        --authrpc.port 8551 \
+        --authrpc.addr 0.0.0.0 \
+        --authrpc.jwtsecret '${DECKER_ROOT}/.runtime/artifacts/jwtsecret' \
+        --metrics 0.0.0.0:9090 \
+        --engine.persistence-threshold 0 \
+        --engine.memory-block-buffer-target 0 \
+        -vvv \
+        --disable-discovery
+    availability:
+      restart: on_failure
+      max_restarts: 5
+      backoff_seconds: 2
+  rbuilder-1:
+    command: |-
+      '${DECKER_ROOT}/bin/rbuilder' \
+        run \
+        '${DECKER_ROOT}/.runtime/configs/rbuilder-1/rbuilder.toml'
+    availability:
+      restart: on_failure
+      max_restarts: 5
+      backoff_seconds: 2

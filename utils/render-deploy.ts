@@ -1,11 +1,14 @@
-import { findContainer, lookup, makeCtx } from "./resolve.ts";
+import { lookup, makeCtx } from "./resolve.ts";
 import { portInService, portNum, portProtocol } from "./types.ts";
-import type { BuildResult, ConfigFile, ContainerDef, Ctx, Pod, Ports, Recipe, Volume, VolumeMount } from "./types.ts";
+import type { ConfigFile, ContainerDef, ContainerResult, Ctx, Pod, Ports, Recipe, Volume, VolumeMount } from "./types.ts";
 
 export type DeployFile = { filename: string; docs: unknown[] };
 
 export function renderDeploy(recipe: Recipe): DeployFile[] {
-  const ctx = makeCtx(recipe, (name) => findContainer(recipe, name).pod.name);
+  const ctx = makeCtx(recipe, (loc) => {
+    if (loc.kind === "process") return "host.containers.internal";
+    return loc.pod.name;
+  });
 
   const files: DeployFile[] = [{
     filename: "artifacts.yaml",
@@ -31,7 +34,7 @@ export function renderDeploy(recipe: Recipe): DeployFile[] {
 
 type ContainerBuild = {
   def: ContainerDef;
-  built: BuildResult;
+  built: ContainerResult;
 };
 
 function podFile(pod: Pod, ctx: Ctx): DeployFile {
@@ -41,10 +44,11 @@ function podFile(pod: Pod, ctx: Ctx): DeployFile {
   };
   const matchLabels = { "app.kubernetes.io/name": pod.name };
 
-  const builds: ContainerBuild[] = pod.containers.map((def) => ({
-    def,
-    built: lookup(def.prototype).build(def, ctx),
-  }));
+  const builds: ContainerBuild[] = pod.containers.map((def) => {
+    const proto = lookup(def.prototype);
+    if (!proto.buildContainer) throw new Error(`container ${def.name} has no buildContainer()`);
+    return { def, built: proto.buildContainer(def, ctx) };
+  });
 
   const volMap = new Map<string, Volume>();
   for (const { built } of builds) {

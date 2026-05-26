@@ -1,13 +1,21 @@
 import { Command } from "jsr:@cliffy/command@^1.0.0-rc.7";
 import { isAbsolute, join, toFileUrl } from "jsr:@std/path@^1.0.0";
-import { generateArtifacts, loadRecipe } from "../utils/build.ts";
+import { generateArtifacts, loadRecipe, missingBinaries } from "../utils/build.ts";
 import { emit } from "../utils/emit.ts";
 import { DEFAULT_MANIFEST, ensureClone, loadManifest } from "../utils/manifest.ts";
-import { DOZZLE_PORT } from "../utils/render-local.ts";
+import { DOZZLE_PORT } from "../utils/render-podman.ts";
 import { bold, cyan, dim, green, ms, red, underline } from "../utils/term.ts";
 
-const REPO_ROOT = new URL("../", import.meta.url).pathname;
-const LATEST = `${REPO_ROOT}manifests/latest.yaml`;
+const DECKER_ROOT = new URL("../", import.meta.url).pathname.replace(/\/$/, "");
+
+async function fileExists(p: string): Promise<boolean> {
+  try {
+    await Deno.stat(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export type Target =
   | { kind: "recipe"; target: string }
@@ -29,7 +37,13 @@ export async function resolveTarget(arg?: string): Promise<Target> {
 }
 
 export function printDozzle() {
-  console.log(`  ${bold("Dozzle")}  ${cyan(underline(`http://localhost:${DOZZLE_PORT}`))}`);
+  console.log(`  ${bold("Pod logs (Dozzle):")} ${cyan(underline(`http://localhost:${DOZZLE_PORT}`))}`);
+}
+
+export async function printAttachIfProcesses() {
+  if (await fileExists(`${DECKER_ROOT}/.runtime/process-compose.yaml`)) {
+    console.log(`  ${bold("Process logs (process-compose):")} ${cyan("decker attach")}`);
+  }
 }
 
 export async function runManifest(sub: "up" | "start", manifestPath: string): Promise<number> {
@@ -54,6 +68,20 @@ export async function upTarget(target: string): Promise<number> {
   } else {
     const { name, recipe } = await loadRecipe(target);
 
+    const t1 = performance.now();
+    const { binaries } = await emit(name, recipe);
+    console.log(`${green("✓")} rendered ${bold(name)} ${dim(`(${ms(t1)})`)}`);
+
+    const missing = missingBinaries(binaries);
+    if (missing.length > 0) {
+      console.error("");
+      console.error(red("✗ host binaries not found:"));
+      for (const b of missing) console.error(`    ${b}`);
+      console.error("");
+      console.error(`  ${dim("place them in ./bin/, set 'binary' in the recipe, or install on PATH")}`);
+      return 1;
+    }
+
     const t0 = performance.now();
     const ar = await generateArtifacts(recipe);
     if (ar.code !== 0) {
@@ -65,19 +93,16 @@ export async function upTarget(target: string): Promise<number> {
       `${green("✓")} artifacts generated ${dim(`(${recipe.artifacts}, ${ms(t0)})`)}`,
     );
 
-    const t1 = performance.now();
-    await emit(name, recipe);
-    console.log(`${green("✓")} rendered ${bold(name)} ${dim(`(${ms(t1)})`)}`);
-
-    yamlPath = `${REPO_ROOT}manifests/${name}/local.yaml`;
+    yamlPath = `${DECKER_ROOT}/.runtime/podman.yaml`;
     podCount = recipe.pods.length + 1;
   }
 
-  await Deno.copyFile(yamlPath, LATEST);
+  const pcPath = yamlPath.replace(/\/[^/]+\.yaml$/, "/process-compose.yaml");
+  const hasPC = await fileExists(pcPath);
 
   const t2 = performance.now();
   const play = await new Deno.Command("podman", {
-    args: ["kube", "play", LATEST],
+    args: ["kube", "play", yamlPath],
     stdout: "piped",
     stderr: "inherit",
   }).output();
@@ -88,6 +113,20 @@ export async function upTarget(target: string): Promise<number> {
   }
   const label = podCount === null ? "started" : `started ${podCount} pods`;
   console.log(`${green("✓")} ${label} ${dim(`(${ms(t2)})`)}`);
+
+  if (hasPC) {
+    const t3 = performance.now();
+    const pc = await new Deno.Command("process-compose", {
+      args: ["up", "-f", pcPath, "--detached"],
+      stdout: "inherit",
+      stderr: "inherit",
+    }).output();
+    if (pc.code !== 0) {
+      console.error(red("✗ process-compose up failed"));
+      return pc.code;
+    }
+    console.log(`${green("✓")} host processes started ${dim(`(${ms(t3)})`)}`);
+  }
   return 0;
 }
 
@@ -109,6 +148,7 @@ export const command = new Command()
     if (code === 0) {
       console.log("");
       printDozzle();
+      await printAttachIfProcesses();
     }
     Deno.exit(code);
   });

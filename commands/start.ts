@@ -4,23 +4,26 @@ import { lookup } from "../utils/resolve.ts";
 import { portNum } from "../utils/types.ts";
 import { bold, cyan, dim, yellow } from "../utils/term.ts";
 import { down } from "./down.ts";
-import { printDozzle, resolveTarget, runManifest, upTarget } from "./up.ts";
+import { printAttachIfProcesses, printDozzle, resolveTarget, runManifest, upTarget } from "./up.ts";
 
 async function advertise(target: string) {
   const { recipe } = await loadRecipe(target);
   console.log("");
-  for (const pod of recipe.pods) {
-    for (const c of pod.containers) {
-      const proto = lookup(c.prototype);
-      const entries = Object.entries(proto.ports);
-      console.log(`  ${bold(cyan(c.name))}${entries.length === 0 ? dim("  (no ports)") : ""}`);
-      for (const [name, spec] of entries) {
-        console.log(`    ${name.padEnd(10)} ${yellow(String(portNum(spec)))}`);
-      }
-      console.log("");
+  const advertised = [
+    ...recipe.pods.flatMap((p) => p.containers),
+    ...(recipe.processes ?? []),
+  ];
+  for (const c of advertised) {
+    const proto = lookup(c.prototype);
+    const entries = Object.entries(proto.ports);
+    console.log(`  ${bold(cyan(c.name))}${entries.length === 0 ? dim("  (no ports)") : ""}`);
+    for (const [name, spec] of entries) {
+      console.log(`    ${name.padEnd(10)} ${yellow(String(portNum(spec)))}`);
     }
+    console.log("");
   }
   printDozzle();
+  await printAttachIfProcesses();
   console.log("");
   console.log(`  ${dim("─ Ctrl+C to stop ─")}`);
 }

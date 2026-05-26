@@ -1,8 +1,8 @@
 import { Command } from "jsr:@cliffy/command@^1.0.0-rc.7";
 
-const REPO_ROOT = new URL("../", import.meta.url).pathname;
-const RECIPES_DIR = `${REPO_ROOT}recipes/`;
-const CONTAINERS_DIR = `${REPO_ROOT}containers/`;
+const DECKER_ROOT = new URL("../", import.meta.url).pathname.replace(/\/$/, "");
+const RECIPES_DIR = `${DECKER_ROOT}/recipes/`;
+const CONTAINERS_DIR = `${DECKER_ROOT}/containers/`;
 
 async function exists(path: string): Promise<boolean> {
   try {

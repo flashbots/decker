@@ -46,17 +46,46 @@ export type ConfigFile = {
   mountPath: string;
 };
 
-export type BuildResult = {
+export type ContainerResult = {
   container: Container;
   volumes?: Volume[];
   configs?: ConfigFile[];
 };
 
+export type ProcessAvailability = {
+  restart?: "no" | "always" | "on_failure" | "exit_on_failure";
+  maxRestarts?: number;
+  backoffSeconds?: number;
+};
+
+export type ProcessSpec = {
+  command: string[];
+  env?: Record<string, string>;
+  workingDir?: string;
+  availability?: ProcessAvailability;
+};
+
+export type ProcessResult = {
+  process: ProcessSpec;
+  configs?: { filename: string; content: string }[];
+};
+
+// A ContainerDef is a recipe-level instance of a prototype placed under a Pod.
+// A ProcessDef is a recipe-level instance of a prototype placed under processes.
+// Both reference the same Prototype space; the section chooses which build fn fires.
 export type ContainerDef = {
   name: string;
   prototype: string | Prototype;
   refs?: Record<string, string>;
   config?: Record<string, unknown>;
+};
+
+export type ProcessDef = {
+  name: string;
+  prototype: string | Prototype;
+  refs?: Record<string, string>;
+  config?: Record<string, unknown>;
+  binary?: string;
 };
 
 export type Pod = {
@@ -68,16 +97,30 @@ export type Pod = {
 export type Recipe = {
   artifacts: string;
   artifactsHostPath?: string;
+  target?: {
+    pods?: "k8s";
+    processes?: "process-compose";
+  };
   pods: Pod[];
+  processes?: ProcessDef[];
 };
 
 export type Ctx = {
-  url(containerName: string, portName: string): string;
+  url(name: string, portName: string): string;
 };
 
-export type PrototypeBuild = (def: ContainerDef, ctx: Ctx) => BuildResult;
+export type HostCtx = Ctx & {
+  artifactsPath: string;
+  dataPath(name: string, volumeName: string): string;
+  configPath(name: string, filename: string): string;
+  binary(def: ProcessDef, defaultName: string): string;
+};
+
+export type PrototypeBuildContainer = (def: ContainerDef, ctx: Ctx) => ContainerResult;
+export type PrototypeBuildProcess = (def: ProcessDef, ctx: HostCtx) => ProcessResult;
 
 export type Prototype = {
   ports: Ports;
-  build: PrototypeBuild;
+  buildContainer?: PrototypeBuildContainer;
+  buildProcess?: PrototypeBuildProcess;
 };

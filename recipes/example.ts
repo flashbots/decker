@@ -2,7 +2,7 @@ import type { Prototype, Recipe } from "../utils/types.ts";
 
 const hello: Prototype = {
   ports: {},
-  build: () => ({
+  buildContainer: () => ({
     container: {
       image: "busybox:1.36",
       command: ["sh", "-c"],

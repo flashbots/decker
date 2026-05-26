@@ -1,4 +1,4 @@
-import type { BuildResult, ContainerDef, Ctx } from "../utils/types.ts";
+import type { ContainerResult, ContainerDef, Ctx } from "../utils/types.ts";
 
 export const ports = {
   http: 3500,
@@ -7,7 +7,7 @@ export const ports = {
   quic:      { port: 9100, protocol: "UDP", service: false },
 } as const;
 
-export function build(def: ContainerDef, ctx: Ctx): BuildResult {
+export function buildContainer(def: ContainerDef, ctx: Ctx): ContainerResult {
   const el = def.refs?.el;
   const builder = def.refs?.builder;
   if (!el) throw new Error(`beacon ${def.name}: missing refs.el`);

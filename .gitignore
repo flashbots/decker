@@ -2,9 +2,5 @@
 .claude
 node_modules
 
-artifacts/
-manifests/latest.yaml
-manifests/*/local.yaml
+.runtime/
 bin/
-
-decker.ts
