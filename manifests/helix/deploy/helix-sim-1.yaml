@@ -1,0 +1,106 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: helix-sim-1-config
+  labels:
+    app.kubernetes.io/part-of: decker-l1
+data:
+  collateral.json: |
+    {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: helix-sim-1
+  labels:
+    app.kubernetes.io/name: helix-sim-1
+    app.kubernetes.io/part-of: decker-l1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: helix-sim-1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: helix-sim-1
+        app.kubernetes.io/part-of: decker-l1
+    spec:
+      containers:
+        - name: helix-sim-1
+          image: 'ghcr.io/gattaca-com/helix-simulator:main'
+          args:
+            - node
+            - '--chain'
+            - /artifacts/genesis.json
+            - '--datadir'
+            - /data_sim
+            - '--color'
+            - never
+            - '--http'
+            - '--http.addr'
+            - 0.0.0.0
+            - '--http.api'
+            - all
+            - '--http.port'
+            - '8555'
+            - '--authrpc.addr'
+            - 0.0.0.0
+            - '--authrpc.port'
+            - '18551'
+            - '--authrpc.jwtsecret'
+            - /artifacts/jwtsecret
+            - '--disable-discovery'
+            - '--enable-ext'
+            - '--builder-collateral-map-path'
+            - /config/collateral.json
+            - '--relay-fee-recipient'
+            - '0x0000000000000000000000000000000000000000'
+            - '--multisend-contract'
+            - '0x0000000000000000000000000000000000000000'
+          env:
+            - name: RELAY_KEY
+              value: '0x64496d4e301e541a6e1237d6ef13a8f8b8b6cb82be9d8ac90073a833dfc2af11'
+          ports:
+            - name: rpc
+              containerPort: 8555
+            - name: authrpc
+              containerPort: 18551
+          volumeMounts:
+            - name: artifacts
+              mountPath: /artifacts
+              readOnly: true
+            - name: data
+              mountPath: /data_sim
+            - name: helix-sim-1-config
+              mountPath: /config/collateral.json
+              subPath: collateral.json
+              readOnly: true
+      volumes:
+        - name: artifacts
+          persistentVolumeClaim:
+            claimName: decker-artifacts
+            readOnly: true
+        - name: data
+          emptyDir: {}
+        - name: helix-sim-1-config
+          configMap:
+            name: helix-sim-1-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: helix-sim-1
+  labels:
+    app.kubernetes.io/name: helix-sim-1
+    app.kubernetes.io/part-of: decker-l1
+spec:
+  selector:
+    app.kubernetes.io/name: helix-sim-1
+  ports:
+    - name: rpc
+      port: 8555
+      targetPort: rpc
+    - name: authrpc
+      port: 18551
+      targetPort: authrpc

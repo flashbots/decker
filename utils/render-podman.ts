@@ -69,7 +69,7 @@ function podDocs(pod: Pod, recipe: Recipe, ctx: Ctx) {
       if (v.kind === "shared-readonly") hasArtifacts = true;
     }
 
-    const podmanMounts = (c.volumeMounts ?? []).map((m) => rewritePodmanMount(m, volByName));
+    const podmanMounts = (c.volumeMounts ?? []).map((m) => rewritePodmanMount(m, volByName, pod.name));
     const configMountName = `${def.name}-config`;
     const configs = built.configs ?? [];
     for (const cf of configs) {
@@ -110,7 +110,7 @@ function podDocs(pod: Pod, recipe: Recipe, ctx: Ctx) {
   }
   for (const v of volsByName.values()) {
     if (v.kind === "ephemeral") {
-      podVolumes.push({ name: v.name, emptyDir: {} });
+      podVolumes.push({ name: `${pod.name}-${v.name}`, emptyDir: {} });
     }
   }
   podVolumes.push(...configVolumes);
@@ -161,14 +161,14 @@ function expandPodmanPorts(ports: Ports | undefined) {
   });
 }
 
-function rewritePodmanMount(m: VolumeMount, vols: Map<string, Volume>) {
+function rewritePodmanMount(m: VolumeMount, vols: Map<string, Volume>, podName: string) {
   const v = vols.get(m.name);
   if (!v) return m;
   if (v.kind === "shared-readonly") {
     return { name: "artifacts", mountPath: m.mountPath, readOnly: true };
   }
   if (v.kind === "ephemeral") {
-    return { name: v.name, mountPath: m.mountPath };
+    return { name: `${podName}-${v.name}`, mountPath: m.mountPath };
   }
   return { name: "artifacts", mountPath: m.mountPath, subPath: v.subPath };
 }

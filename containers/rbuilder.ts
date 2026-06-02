@@ -29,6 +29,7 @@ coinbase_secret_key = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7
 relay_secret_key = "0x25295f0d1d592a90b333e26e85149708208e9f8e8bc18f6c77bd62f8ad7a6866"
 
 cl_node_url = ["${clUrl}"]
+genesis_fork_version = "0x20000089"
 jsonrpc_server_port = ${ports.http}
 jsonrpc_server_ip = "${bindIp}"
 extra_data = "${name} ⚡"
@@ -79,7 +80,7 @@ export function buildContainer(def: ContainerDef, ctx: Ctx): ContainerResult {
   );
   return {
     container: {
-      image: "ghcr.io/flashbots/rbuilder:sha-7efdc0b",
+      image: "ghcr.io/flashbots/rbuilder:sha-0f2ea0c",
       args: ["run", "/config/rbuilder.toml"],
       ports,
       volumeMounts: [

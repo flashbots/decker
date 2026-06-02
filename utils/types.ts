@@ -96,6 +96,7 @@ export type Pod = {
 
 export type Recipe = {
   artifacts: string;
+  artifactsArgs?: string[];
   artifactsHostPath?: string;
   target?: {
     pods?: "k8s";

@@ -33,7 +33,7 @@ export async function generateArtifacts(recipe: Recipe) {
     if (!(e instanceof Deno.errors.NotFound)) throw e;
   }
   return await new Deno.Command("builder-playground", {
-    args: ["start", recipe.artifacts, "--dry-run", "--output", out],
+    args: ["start", recipe.artifacts, "--dry-run", "--output", out, ...(recipe.artifactsArgs ?? [])],
     stdout: "piped",
     stderr: "inherit",
   }).output();

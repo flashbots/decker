@@ -6,8 +6,9 @@ export const command = new Command()
   .arguments("<target:string>")
   .action(async (_, target: string) => {
     const { recipe } = await loadRecipe(target);
+    const extra = (recipe.artifactsArgs ?? []).join(" ");
     console.log(
-      `builder-playground start ${recipe.artifacts} --dry-run --output ${artifactsHostPath(recipe)}`,
+      `builder-playground start ${recipe.artifacts} --dry-run --output ${artifactsHostPath(recipe)}${extra ? " " + extra : ""}`,
     );
     const r = await generateArtifacts(recipe);
     await Deno.stdout.write(r.stdout);
