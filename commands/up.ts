@@ -83,11 +83,11 @@ export async function upTarget(target: string): Promise<number> {
     }
 
     const t0 = performance.now();
-    const ar = await generateArtifacts(recipe);
-    if (ar.code !== 0) {
-      await Deno.stdout.write(ar.stdout);
-      console.error(red("✗ artifacts failed"));
-      return ar.code;
+    try {
+      await generateArtifacts(recipe);
+    } catch (e) {
+      console.error(red(`✗ artifacts failed: ${(e as Error).message}`));
+      return 1;
     }
     console.log(
       `${green("✓")} artifacts generated ${dim(`(${recipe.artifacts}, ${ms(t0)})`)}`,

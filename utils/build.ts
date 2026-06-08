@@ -4,6 +4,7 @@ import type { Recipe } from "./types.ts";
 
 const DECKER_ROOT = new URL("../", import.meta.url).pathname.replace(/\/$/, "");
 const RECIPES_DIR = new URL("../recipes/", import.meta.url);
+const GENERATORS_DIR = new URL("../generators/", import.meta.url);
 
 export async function loadRecipe(target: string): Promise<{ name: string; recipe: Recipe }> {
   let path: string;
@@ -25,18 +26,26 @@ export function artifactsHostPath(recipe: Recipe): string {
   return isAbsolute(p) ? p : join(DECKER_ROOT, p);
 }
 
-export async function generateArtifacts(recipe: Recipe) {
+export async function generateArtifacts(recipe: Recipe): Promise<void> {
   const out = artifactsHostPath(recipe);
   try {
     await Deno.remove(out, { recursive: true });
   } catch (e) {
     if (!(e instanceof Deno.errors.NotFound)) throw e;
   }
-  return await new Deno.Command("builder-playground", {
-    args: ["start", recipe.artifacts, "--dry-run", "--output", out],
-    stdout: "piped",
-    stderr: "inherit",
-  }).output();
+  await Deno.mkdir(out, { recursive: true });
+  const entry = new URL(`./${recipe.artifacts}/index.ts`, GENERATORS_DIR);
+  let mod: { generate?: (opts: { outDir: string }) => Promise<unknown> };
+  try {
+    mod = await import(entry.href);
+  } catch (e) {
+    if (e instanceof TypeError) throw new Error(`unknown artifacts generator: ${recipe.artifacts}`);
+    throw e;
+  }
+  if (typeof mod.generate !== "function") {
+    throw new Error(`generators/${recipe.artifacts}/index.ts must export 'generate'`);
+  }
+  await mod.generate({ outDir: out });
 }
 
 export async function buildOne(target: string): Promise<{ name: string; binaries: string[] }> {

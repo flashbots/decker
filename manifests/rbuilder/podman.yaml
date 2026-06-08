@@ -133,7 +133,7 @@ spec:
   volumes:
     - name: artifacts
       hostPath:
-        path: '${DECKER_ROOT}/artifacts'
+        path: '${DECKER_ROOT}/.runtime/artifacts'
         type: Directory
     - name: data
       emptyDir: {}
@@ -223,7 +223,7 @@ spec:
   volumes:
     - name: artifacts
       hostPath:
-        path: '${DECKER_ROOT}/artifacts'
+        path: '${DECKER_ROOT}/.runtime/artifacts'
         type: Directory
     - name: data
       emptyDir: {}
@@ -264,7 +264,7 @@ spec:
   volumes:
     - name: artifacts
       hostPath:
-        path: '${DECKER_ROOT}/artifacts'
+        path: '${DECKER_ROOT}/.runtime/artifacts'
         type: Directory
 ---
 apiVersion: v1

@@ -22,8 +22,6 @@ Ethereum L1/L2 devnet creation is the main focus area but you can use it for any
 
 Install Deno and podman first (remember to extend the PATH variable to support `deno install` outputs).
 
-Install builder-playground (currently used for artifact generation).
-
 Clone this repo and run
 ```sh
 just install

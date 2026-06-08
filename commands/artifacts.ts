@@ -1,15 +1,19 @@
 import { Command } from "jsr:@cliffy/command@^1.0.0-rc.7";
 import { artifactsHostPath, generateArtifacts, loadRecipe } from "../utils/build.ts";
+import { bold, dim, green, ms, red } from "../utils/term.ts";
 
 export const command = new Command()
-  .description("Generate artifacts for a recipe via builder-playground --dry-run")
+  .description("Generate a recipe's artifacts into its artifactsHostPath without starting pods")
   .arguments("<target:string>")
   .action(async (_, target: string) => {
-    const { recipe } = await loadRecipe(target);
-    console.log(
-      `builder-playground start ${recipe.artifacts} --dry-run --output ${artifactsHostPath(recipe)}`,
-    );
-    const r = await generateArtifacts(recipe);
-    await Deno.stdout.write(r.stdout);
-    Deno.exit(r.code);
+    const { name, recipe } = await loadRecipe(target);
+    const out = artifactsHostPath(recipe);
+    const t0 = performance.now();
+    try {
+      await generateArtifacts(recipe);
+    } catch (e) {
+      console.error(red(`✗ artifacts failed: ${(e as Error).message}`));
+      Deno.exit(1);
+    }
+    console.log(`${green("✓")} ${bold(name)} artifacts generated ${dim(`(${recipe.artifacts} → ${out}, ${ms(t0)})`)}`);
   });
