@@ -1,16 +1,27 @@
-import { findComponent, lookup, makeCtx } from "./resolve.ts";
-import { portNum, portProtocol } from "./types.ts";
-import type { ConfigFile, Ctx, ImageBuildSpec, Pod, Ports, Recipe, Volume, VolumeMount } from "./types.ts";
-import { imageTag } from "./image-build.ts";
+import { stringify } from "jsr:@std/yaml@^1.0.5";
+import { findComponent, lookup, makeCtx } from "../utils/resolve.ts";
+import { portNum, portProtocol } from "../utils/types.ts";
+import type {
+  ConfigFile,
+  Ctx,
+  ImageBuildSpec,
+  Pod,
+  Ports,
+  Recipe,
+  RenderCtx,
+  Renderer,
+  RendererPaths,
+  RenderResult,
+  Volume,
+  VolumeMount,
+} from "../utils/types.ts";
+import { imageTag } from "../utils/image-build.ts";
 
 export const DOZZLE_PORT = 18080;
 
-export type RenderPodmanResult = {
-  docs: unknown[];
-  imageBuilds: Map<string, ImageBuildSpec>;
-};
+const yamlOpts = { lineWidth: -1, useAnchors: false, skipInvalid: false } as const;
 
-export function renderPodman(recipe: Recipe): RenderPodmanResult {
+function build(recipe: Recipe, _ctx: RenderCtx): RenderResult {
   const ctx = makeCtx(recipe, (loc) => hostFor(loc));
   const imageBuilds = new Map<string, ImageBuildSpec>();
   const docs: unknown[] = [];
@@ -19,8 +30,54 @@ export function renderPodman(recipe: Recipe): RenderPodmanResult {
     docs.push(...configMaps, podDoc);
   }
   docs.push(dozzlePod());
-  return { docs, imageBuilds };
+  const content = docs.map((d) => stringify(d, yamlOpts)).join("---\n");
+  return {
+    files: [{ relPath: "podman.yaml", content }],
+    imageBuilds,
+  };
 }
+
+async function start(paths: RendererPaths): Promise<number> {
+  const yaml = `${paths.runtimeDir}/podman.yaml`;
+  const { code, stdout, stderr } = await new Deno.Command("podman", {
+    args: ["kube", "play", yaml],
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+  if (code !== 0) {
+    await Deno.stdout.write(stdout);
+    await Deno.stderr.write(stderr);
+  }
+  return code;
+}
+
+async function stop(runtimeDir: string): Promise<number> {
+  const yaml = `${runtimeDir}/podman.yaml`;
+  try {
+    await Deno.stat(yaml);
+  } catch {
+    return 0;
+  }
+  const { code } = await new Deno.Command("podman", {
+    args: ["kube", "down", yaml],
+    stdout: "inherit",
+    stderr: "inherit",
+  }).spawn().status;
+  return code;
+}
+
+function summary(_paths: RendererPaths): Array<[string, string]> {
+  return [["Pod logs (Dozzle)", `http://localhost:${DOZZLE_PORT}`]];
+}
+
+export const renderer: Renderer = {
+  name: "podman",
+  slot: "pods",
+  render: build,
+  start,
+  stop,
+  summary,
+};
 
 function hostFor(loc: ReturnType<typeof findComponent>): string {
   if (loc.kind === "process") return "host.containers.internal";

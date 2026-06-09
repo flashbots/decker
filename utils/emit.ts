@@ -1,12 +1,8 @@
-import { stringify } from "jsr:@std/yaml@^1.0.5";
 import { dirname, isAbsolute } from "jsr:@std/path@^1.0.0";
-import { renderPodman } from "./render-podman.ts";
-import { renderDeploy } from "./render-deploy.ts";
-import { renderProcessCompose } from "./render-process-compose.ts";
-import type { ImageBuildSpec, Recipe } from "./types.ts";
+import { rendererFor } from "./renderers.ts";
+import type { ImageBuildSpec, Recipe, Renderer, RendererPaths } from "./types.ts";
 
 const DECKER_ROOT = new URL("../", import.meta.url).pathname.replace(/\/$/, "");
-const yamlOpts = { lineWidth: -1, useAnchors: false, skipInvalid: false } as const;
 
 function resolve(recipe: Recipe): Recipe {
   const p = recipe.artifactsHostPath ?? "runtime/artifacts";
@@ -33,41 +29,58 @@ function validate(recipe: Recipe) {
 export type EmitResult = {
   binaries: string[];
   imageBuilds: Map<string, ImageBuildSpec>;
+  selected: Renderer[];
+  paths: RendererPaths;
 };
 
 export async function emit(name: string, recipe: Recipe): Promise<EmitResult> {
   validate(recipe);
   recipe = resolve(recipe);
-  const outDir = `${DECKER_ROOT}/manifests/${name}`;
-  await Deno.mkdir(`${outDir}/deploy`, { recursive: true });
-  const { docs: podmanDocs, imageBuilds } = renderPodman(recipe);
-  const podmanBody = podmanDocs.map((d) => stringify(d, yamlOpts)).join("---\n");
-  await Deno.writeTextFile(`${outDir}/podman.yaml`, podmanBody);
+  const manifestDir = `${DECKER_ROOT}/manifests/${name}`;
+  const runtimeDir = `${DECKER_ROOT}/runtime`;
+  const ctx = { manifestRoot: `\${DECKER_ROOT}/runtime` };
 
-  const deployFiles = renderDeploy(recipe);
-  for (const f of deployFiles) {
-    const body = f.docs.map((d) => stringify(d, yamlOpts)).join("---\n");
-    await Deno.writeTextFile(`${outDir}/deploy/${f.filename}`, body);
+  const selected: Renderer[] = [rendererFor("pods", recipe.target?.pods)];
+  if ((recipe.processes ?? []).length > 0) {
+    selected.push(rendererFor("processes", recipe.target?.processes));
   }
 
-  const pc = renderProcessCompose(recipe, `\${DECKER_ROOT}/runtime`);
-  let binaries: string[] = [];
-  if (pc) {
-    binaries = pc.binaries;
-    await Deno.writeTextFile(`${outDir}/process-compose.yaml`, stringify(pc.doc, yamlOpts));
-    for (const f of pc.files) {
-      const full = `${outDir}/${f.relPath}`;
+  try {
+    await Deno.remove(manifestDir, { recursive: true });
+  } catch (e) {
+    if (!(e instanceof Deno.errors.NotFound)) throw e;
+  }
+  await Deno.mkdir(manifestDir, { recursive: true });
+
+  const imageBuilds = new Map<string, ImageBuildSpec>();
+  const binaries: string[] = [];
+  for (const r of selected) {
+    const out = r.render(recipe, ctx);
+    for (const f of out.files) {
+      const full = `${manifestDir}/${f.relPath}`;
       await Deno.mkdir(dirname(full), { recursive: true });
       await Deno.writeTextFile(full, f.content);
     }
+    if (out.imageBuilds) {
+      for (const [tag, spec] of out.imageBuilds) {
+        const existing = imageBuilds.get(tag);
+        if (existing) {
+          if (existing.repo !== spec.repo || existing.ref !== spec.ref || existing.cmd !== spec.cmd) {
+            throw new Error(`image tag ${tag} produced by conflicting ImageBuildSpec`);
+          }
+        } else {
+          imageBuilds.set(tag, spec);
+        }
+      }
+    }
+    if (out.binaries) binaries.push(...out.binaries);
   }
 
-  await materializeRuntime(outDir);
-  return { binaries, imageBuilds };
+  await materializeRuntime(manifestDir, runtimeDir);
+  return { binaries, imageBuilds, selected, paths: { runtimeDir, manifestDir } };
 }
 
-async function materializeRuntime(outDir: string) {
-  const runtimeDir = `${DECKER_ROOT}/runtime`;
+async function materializeRuntime(manifestDir: string, runtimeDir: string) {
   try {
     for await (const entry of Deno.readDir(runtimeDir)) {
       if (entry.name === "artifacts") continue;
@@ -76,7 +89,7 @@ async function materializeRuntime(outDir: string) {
   } catch (e) {
     if (!(e instanceof Deno.errors.NotFound)) throw e;
   }
-  await copyExpanded(outDir, runtimeDir);
+  await copyExpanded(manifestDir, runtimeDir);
 }
 
 async function copyExpanded(src: string, dest: string) {

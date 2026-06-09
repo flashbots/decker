@@ -115,8 +115,8 @@ export type Recipe = {
   artifacts: ArtifactsSpec;
   artifactsHostPath?: string;
   target?: {
-    pods?: "k8s";
-    processes?: "process-compose";
+    pods?: string;
+    processes?: string;
   };
   pods: Pod[];
   processes?: ProcessDef[];
@@ -142,4 +142,35 @@ export type Prototype = {
   ports: Ports;
   buildContainer?: PrototypeBuildContainer;
   buildProcess?: PrototypeBuildProcess;
+};
+
+export type RendererSlot = "pods" | "processes";
+
+export type RenderCtx = {
+  manifestRoot: string;
+};
+
+export type RenderedFile = {
+  relPath: string;
+  content: string;
+};
+
+export type RenderResult = {
+  files: RenderedFile[];
+  imageBuilds?: Map<string, ImageBuildSpec>;
+  binaries?: string[];
+};
+
+export type RendererPaths = {
+  runtimeDir: string;
+  manifestDir: string;
+};
+
+export type Renderer = {
+  name: string;
+  slot: RendererSlot;
+  render(recipe: Recipe, ctx: RenderCtx): RenderResult;
+  start?(paths: RendererPaths): Promise<number>;
+  stop?(runtimeDir: string): Promise<number>;
+  summary?(paths: RendererPaths): Array<[string, string]>;
 };

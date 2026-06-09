@@ -1,8 +1,8 @@
 import { Command } from "jsr:@cliffy/command@^1.0.0-rc.7";
+import { allRenderers } from "../utils/renderers.ts";
 
 const DECKER_ROOT = new URL("../", import.meta.url).pathname.replace(/\/$/, "");
-const RUNTIME_PODMAN = `${DECKER_ROOT}/runtime/podman.yaml`;
-const RUNTIME_PC = `${DECKER_ROOT}/runtime/process-compose.yaml`;
+const RUNTIME_DIR = `${DECKER_ROOT}/runtime`;
 
 async function fileExists(p: string): Promise<boolean> {
   try {
@@ -14,23 +14,17 @@ async function fileExists(p: string): Promise<boolean> {
 }
 
 export async function down(): Promise<number> {
-  if (!(await fileExists(RUNTIME_PODMAN))) return 0;
-
+  if (!(await fileExists(RUNTIME_DIR))) return 0;
   let code = 0;
-  if (await fileExists(RUNTIME_PC)) {
-    const pc = await new Deno.Command("process-compose", {
-      args: ["down"],
-      stdout: "inherit",
-      stderr: "inherit",
-    }).spawn().status;
-    if (pc.code !== 0) code = pc.code;
+  // processes first so they detach from any podman backends, then pods
+  const ordered = [
+    ...allRenderers().filter((r) => r.slot === "processes" && r.stop),
+    ...allRenderers().filter((r) => r.slot === "pods" && r.stop),
+  ];
+  for (const r of ordered) {
+    const c = await r.stop!(RUNTIME_DIR);
+    if (c !== 0) code = c;
   }
-  const kube = await new Deno.Command("podman", {
-    args: ["kube", "down", RUNTIME_PODMAN],
-    stdout: "inherit",
-    stderr: "inherit",
-  }).spawn().status;
-  if (kube.code !== 0) code = kube.code;
   return code;
 }
 

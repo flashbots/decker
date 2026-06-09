@@ -4,20 +4,11 @@ import { generateArtifacts, loadRecipe, missingBinaries } from "../utils/build.t
 import { emit } from "../utils/emit.ts";
 import { ensureImages } from "../utils/image-build.ts";
 import { DEFAULT_MANIFEST, ensureClone, loadManifest } from "../utils/manifest.ts";
-import { DOZZLE_PORT } from "../utils/render-podman.ts";
 import { dim, done, fail, note, red, rule, step, summary } from "../utils/term.ts";
-import type { ImageBuildSpec, Recipe } from "../utils/types.ts";
+import type { ImageBuildSpec, Recipe, Renderer, RendererPaths } from "../utils/types.ts";
 
 const DECKER_ROOT = new URL("../", import.meta.url).pathname.replace(/\/$/, "");
-
-async function fileExists(p: string): Promise<boolean> {
-  try {
-    await Deno.stat(p);
-    return true;
-  } catch {
-    return false;
-  }
-}
+const RUNTIME_DIR = `${DECKER_ROOT}/runtime`;
 
 export type Target =
   | { kind: "recipe"; target: string }
@@ -38,12 +29,10 @@ export async function resolveTarget(arg?: string): Promise<Target> {
   return { kind: "recipe", target: arg };
 }
 
-export async function printSummary() {
-  const entries: Array<[string, string]> = [
-    ["Pod logs (Dozzle)", `http://localhost:${DOZZLE_PORT}`],
-  ];
-  if (await fileExists(`${DECKER_ROOT}/runtime/process-compose.yaml`)) {
-    entries.push(["Process logs (process-compose)", "decker attach"]);
+export function printSummary(renderers: Renderer[], paths: RendererPaths) {
+  const entries: Array<[string, string]> = [];
+  for (const r of renderers) {
+    if (r.summary) entries.push(...r.summary(paths));
   }
   summary(entries);
 }
@@ -61,14 +50,20 @@ export async function runManifest(sub: "up" | "start", manifestPath: string): Pr
   return code;
 }
 
-export async function upTarget(target: string): Promise<number> {
-  let yamlPath: string;
-  let podCount: number | null = null;
+export type UpOutcome = {
+  code: number;
+  renderers: Renderer[];
+  paths: RendererPaths;
+};
+
+export async function upTarget(target: string): Promise<UpOutcome> {
   let loadedRecipe: Recipe | null = null;
+  let renderers: Renderer[] = [];
+  let paths: RendererPaths = { runtimeDir: RUNTIME_DIR, manifestDir: "" };
   let imageBuilds: Map<string, ImageBuildSpec> = new Map();
 
   if (target.endsWith(".yaml")) {
-    yamlPath = await Deno.realPath(target);
+    paths = { runtimeDir: RUNTIME_DIR, manifestDir: "" };
   } else {
     const { name, recipe } = await loadRecipe(target);
     loadedRecipe = recipe;
@@ -80,14 +75,16 @@ export async function upTarget(target: string): Promise<number> {
       await generateArtifacts(recipe);
     } catch (e) {
       fail(sArt, (e as Error).message);
-      return 1;
+      return { code: 1, renderers, paths };
     }
     done(sArt, `${recipe.artifacts.generator}/${recipe.artifacts.fork}`);
 
     const sEmit = step("rendering manifests");
     const emitted = await emit(name, recipe);
     imageBuilds = emitted.imageBuilds;
-    done(sEmit);
+    renderers = emitted.selected;
+    paths = emitted.paths;
+    done(sEmit, renderers.map((r) => r.name).join(" + "));
 
     const missing = missingBinaries(emitted.binaries);
     if (missing.length > 0) {
@@ -96,11 +93,8 @@ export async function upTarget(target: string): Promise<number> {
       for (const b of missing) console.error(`    ${b}`);
       console.error("");
       console.error(`  ${dim("place them in ./bin/, set 'binary' in the recipe, or install on PATH")}`);
-      return 1;
+      return { code: 1, renderers, paths };
     }
-
-    yamlPath = `${DECKER_ROOT}/runtime/podman.yaml`;
-    podCount = recipe.pods.length + 1;
   }
 
   if (imageBuilds.size > 0) {
@@ -115,26 +109,24 @@ export async function upTarget(target: string): Promise<number> {
       note("✓", `images ready ${dim(`(${extra})`)}`, t);
     } catch (e) {
       console.error(red(`✗ image build failed: ${(e as Error).message}`));
-      return 1;
+      return { code: 1, renderers, paths };
     }
   }
 
-  const pcPath = yamlPath.replace(/\/[^/]+\.yaml$/, "/process-compose.yaml");
-  const hasPC = await fileExists(pcPath);
+  const runnable = renderers.filter((r) => r.start);
+  const pods = runnable.filter((r) => r.slot === "pods");
+  const procs = runnable.filter((r) => r.slot === "processes");
 
-  rule("pods");
-  const sPods = step(podCount === null ? "starting pods" : `starting ${podCount} pods`);
-  const play = await new Deno.Command("podman", {
-    args: ["kube", "play", yamlPath],
-    stdout: "piped",
-    stderr: "inherit",
-  }).output();
-  if (play.code !== 0) {
-    fail(sPods, "podman kube play failed");
-    await Deno.stdout.write(play.stdout);
-    return play.code;
+  for (const r of pods) {
+    rule(r.slot);
+    const sp = step(`starting ${r.name}`);
+    const code = await r.start!(paths);
+    if (code !== 0) {
+      fail(sp, `${r.name} start failed`);
+      return { code, renderers, paths };
+    }
+    done(sp);
   }
-  done(sPods);
 
   if ((loadedRecipe?.scripts ?? []).length > 0) {
     rule("scripts");
@@ -146,32 +138,29 @@ export async function upTarget(target: string): Promise<number> {
         note("✓", label, t);
       } catch (e) {
         console.error(red(`✗ ${label} failed: ${(e as Error).message}`));
-        return 1;
+        return { code: 1, renderers, paths };
       }
     }
   }
 
-  if (hasPC) {
-    rule("host processes");
+  for (const r of procs) {
+    rule(r.slot);
     const t = performance.now();
-    const pc = await new Deno.Command("process-compose", {
-      args: ["up", "-f", pcPath, "--detached"],
-      stdout: "inherit",
-      stderr: "inherit",
-    }).output();
-    if (pc.code !== 0) {
-      console.error(red("✗ process-compose up failed"));
-      return pc.code;
+    const code = await r.start!(paths);
+    if (code !== 0) {
+      console.error(red(`✗ ${r.name} start failed`));
+      return { code, renderers, paths };
     }
-    note("✓", "host processes started", t);
+    note("✓", `${r.name} started`, t);
   }
-  return 0;
+
+  return { code: 0, renderers, paths };
 }
 
 export async function up(arg?: string): Promise<number> {
   const t = await resolveTarget(arg);
   if (t.kind === "manifest") return await runManifest("up", t.path);
-  return await upTarget(t.kind === "recipe" ? t.target : t.path);
+  return (await upTarget(t.kind === "recipe" ? t.target : t.path)).code;
 }
 
 export const command = new Command()
@@ -182,7 +171,7 @@ export const command = new Command()
     if (t.kind === "manifest") {
       Deno.exit(await runManifest("up", t.path));
     }
-    const code = await upTarget(t.kind === "recipe" ? t.target : t.path);
-    if (code === 0) await printSummary();
-    Deno.exit(code);
+    const out = await upTarget(t.kind === "recipe" ? t.target : t.path);
+    if (out.code === 0) printSummary(out.renderers, out.paths);
+    Deno.exit(out.code);
   });

@@ -4,9 +4,9 @@ import { lookup } from "../utils/resolve.ts";
 import { portNum } from "../utils/types.ts";
 import { accent, bold, dim, muted, rule, warn } from "../utils/term.ts";
 import { down } from "./down.ts";
-import { printSummary, resolveTarget, runManifest, upTarget } from "./up.ts";
+import { printSummary, resolveTarget, runManifest, type UpOutcome, upTarget } from "./up.ts";
 
-async function advertise(target: string) {
+async function advertise(target: string, out: UpOutcome) {
   const { recipe } = await loadRecipe(target);
   rule("services");
   const advertised = [
@@ -21,7 +21,7 @@ async function advertise(target: string) {
       console.log(`    ${name.padEnd(10)} ${warn(String(portNum(spec)))}`);
     }
   }
-  await printSummary();
+  printSummary(out.renderers, out.paths);
   console.log("");
   console.log(`  ${muted("Ctrl+C to stop")}`);
 }
@@ -38,9 +38,9 @@ export const command = new Command()
       Deno.exit(await runManifest("start", t.path));
     }
 
-    const code = await upTarget(t.kind === "recipe" ? t.target : t.path);
-    if (code !== 0) Deno.exit(code);
-    if (t.kind === "recipe") await advertise(t.target);
+    const out = await upTarget(t.kind === "recipe" ? t.target : t.path);
+    if (out.code !== 0) Deno.exit(out.code);
+    if (t.kind === "recipe") await advertise(t.target, out);
 
     let downing = false;
     const stop = async () => {

@@ -1,18 +1,33 @@
-import { lookup, makeCtx } from "./resolve.ts";
-import { portInService, portNum, portProtocol } from "./types.ts";
-import type { ConfigFile, ContainerDef, ContainerResult, Ctx, Pod, Ports, Recipe, Volume, VolumeMount } from "./types.ts";
+import { stringify } from "jsr:@std/yaml@^1.0.5";
+import { lookup, makeCtx } from "../utils/resolve.ts";
+import { portInService, portNum, portProtocol } from "../utils/types.ts";
+import type {
+  ConfigFile,
+  ContainerDef,
+  ContainerResult,
+  Ctx,
+  Pod,
+  Ports,
+  Recipe,
+  RenderCtx,
+  Renderer,
+  RendererPaths,
+  RenderResult,
+  Volume,
+  VolumeMount,
+} from "../utils/types.ts";
 
-export type DeployFile = { filename: string; docs: unknown[] };
+const yamlOpts = { lineWidth: -1, useAnchors: false, skipInvalid: false } as const;
 
-export function renderDeploy(recipe: Recipe): DeployFile[] {
+function build(recipe: Recipe, _ctx: RenderCtx): RenderResult {
   const ctx = makeCtx(recipe, (loc) => {
     if (loc.kind === "process") return "host.containers.internal";
     return loc.pod.name;
   });
 
-  const files: DeployFile[] = [{
-    filename: "artifacts.yaml",
-    docs: [{
+  const files = [{
+    relPath: "deploy/artifacts.yaml",
+    content: stringify({
       apiVersion: "v1",
       kind: "PersistentVolumeClaim",
       metadata: {
@@ -23,21 +38,34 @@ export function renderDeploy(recipe: Recipe): DeployFile[] {
         accessModes: ["ReadOnlyMany"],
         resources: { requests: { storage: "256Mi" } },
       },
-    }],
+    }, yamlOpts),
   }];
 
   for (const pod of recipe.pods) {
-    files.push(podFile(pod, ctx));
+    const docs = podDocs(pod, ctx);
+    const content = docs.map((d) => stringify(d, yamlOpts)).join("---\n");
+    files.push({ relPath: `deploy/${pod.name}.yaml`, content });
   }
-  return files;
+  return { files };
 }
+
+function summary(paths: RendererPaths): Array<[string, string]> {
+  return [["Apply k8s manifests", `kubectl apply -f ${paths.manifestDir}/deploy/`]];
+}
+
+export const renderer: Renderer = {
+  name: "k8s",
+  slot: "pods",
+  render: build,
+  summary,
+};
 
 type ContainerBuild = {
   def: ContainerDef;
   built: ContainerResult;
 };
 
-function podFile(pod: Pod, ctx: Ctx): DeployFile {
+function podDocs(pod: Pod, ctx: Ctx): unknown[] {
   const labels = {
     "app.kubernetes.io/name": pod.name,
     "app.kubernetes.io/part-of": "decker-l1",
@@ -96,7 +124,7 @@ function podFile(pod: Pod, ctx: Ctx): DeployFile {
     const env = c.env ? Object.entries(c.env).map(([name, value]) => ({ name, value })) : [];
     return {
       name: def.name,
-      image: c.image,
+      image: typeof c.image === "string" ? c.image : `decker-${def.name}`,
       ...(c.command ? { command: c.command } : {}),
       ...(c.args ? { args: c.args } : {}),
       ...(env.length > 0 ? { env } : {}),
@@ -139,7 +167,7 @@ function podFile(pod: Pod, ctx: Ctx): DeployFile {
       },
     });
   }
-  return { filename: `${pod.name}.yaml`, docs };
+  return docs;
 }
 
 function expandDeployPorts(ports: Ports | undefined) {

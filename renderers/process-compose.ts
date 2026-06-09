@@ -1,25 +1,28 @@
-import { lookup, makeHostCtx } from "./resolve.ts";
-import type { ProcessSpec, Recipe } from "./types.ts";
+import { stringify } from "jsr:@std/yaml@^1.0.5";
+import { lookup, makeHostCtx } from "../utils/resolve.ts";
+import type {
+  ProcessSpec,
+  Recipe,
+  RenderCtx,
+  Renderer,
+  RendererPaths,
+  RenderResult,
+} from "../utils/types.ts";
 
-const DECKER_ROOT = new URL("../", import.meta.url).pathname.replace(/\/$/, "");
+const yamlOpts = { lineWidth: -1, useAnchors: false, skipInvalid: false } as const;
 
-export type ProcessComposeOutput = {
-  doc: unknown;
-  files: { relPath: string; content: string }[];
-  binaries: string[];
-};
-
-export function renderProcessCompose(recipe: Recipe, manifestRoot: string): ProcessComposeOutput | null {
+function build(recipe: Recipe, ctx: RenderCtx): RenderResult {
   const processes = recipe.processes ?? [];
-  if (processes.length === 0) return null;
+  if (processes.length === 0) return { files: [] };
 
   if (!recipe.artifactsHostPath) {
     throw new Error("recipe.artifactsHostPath is required for processes");
   }
+  const manifestRoot = ctx.manifestRoot;
   const artifactsPath = recipe.artifactsHostPath;
   const dataRoot = `${manifestRoot}/data`;
 
-  const ctx = makeHostCtx(
+  const hostCtx = makeHostCtx(
     recipe,
     () => "127.0.0.1",
     artifactsPath,
@@ -29,14 +32,14 @@ export function renderProcessCompose(recipe: Recipe, manifestRoot: string): Proc
   );
 
   const procs: Record<string, unknown> = {};
-  const files: { relPath: string; content: string }[] = [];
+  const files: RenderResult["files"] = [];
   const binaries: string[] = [];
   for (const def of processes) {
     const proto = lookup(def.prototype);
     if (!proto.buildProcess) {
       throw new Error(`process ${def.name} has no buildProcess()`);
     }
-    const built = proto.buildProcess(def, ctx);
+    const built = proto.buildProcess(def, hostCtx);
     if (built.process.command.length > 0) binaries.push(built.process.command[0]);
     procs[def.name] = procEntry(built.process);
     for (const cf of built.configs ?? []) {
@@ -47,8 +50,51 @@ export function renderProcessCompose(recipe: Recipe, manifestRoot: string): Proc
     }
   }
 
-  return { doc: { version: "0.5", processes: procs }, files, binaries };
+  files.push({
+    relPath: "process-compose.yaml",
+    content: stringify({ version: "0.5", processes: procs }, yamlOpts),
+  });
+
+  return { files, binaries };
 }
+
+async function start(paths: RendererPaths): Promise<number> {
+  const yaml = `${paths.runtimeDir}/process-compose.yaml`;
+  const { code } = await new Deno.Command("process-compose", {
+    args: ["up", "-f", yaml, "--detached"],
+    stdout: "inherit",
+    stderr: "inherit",
+  }).output();
+  return code;
+}
+
+async function stop(runtimeDir: string): Promise<number> {
+  const yaml = `${runtimeDir}/process-compose.yaml`;
+  try {
+    await Deno.stat(yaml);
+  } catch {
+    return 0;
+  }
+  const { code } = await new Deno.Command("process-compose", {
+    args: ["down"],
+    stdout: "inherit",
+    stderr: "inherit",
+  }).spawn().status;
+  return code;
+}
+
+function summary(_paths: RendererPaths): Array<[string, string]> {
+  return [["Process logs (process-compose)", "decker attach"]];
+}
+
+export const renderer: Renderer = {
+  name: "process-compose",
+  slot: "processes",
+  render: build,
+  start,
+  stop,
+  summary,
+};
 
 function procEntry(p: ProcessSpec) {
   const entry: Record<string, unknown> = {
