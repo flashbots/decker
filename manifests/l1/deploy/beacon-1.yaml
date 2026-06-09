@@ -63,6 +63,11 @@ spec:
             - '0x690B9A9E9aa1C9dB991C7721a92d351Db4FaC990'
             - '--libp2p-addresses'
             - ''
+            - '--builder'
+            - 'http://mev-boost-relay-1:9062'
+            - '--builder-fallback-epochs-since-finalization'
+            - '0'
+            - '--builder-fallback-disable-checks'
           ports:
             - name: http
               containerPort: 3500

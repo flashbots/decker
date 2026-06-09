@@ -808,7 +808,8 @@ spec:
           hostPort: 6379
       volumeMounts: []
     - name: housekeeper-mb-1
-      image: 'localhost/flashbots/mev-boost-relay:decker-known-validators'
+      image: 'decker-mev-boost-relay:caner-devnet-cold-starts'
+      imagePullPolicy: Never
       command:
         - /bin/sh
         - '-c'
@@ -834,7 +835,8 @@ spec:
           value: '0x20000095'
       volumeMounts: []
     - name: mev-boost-relay-1
-      image: 'localhost/flashbots/mev-boost-relay:decker-known-validators'
+      image: 'decker-mev-boost-relay:caner-devnet-cold-starts'
+      imagePullPolicy: Never
       command:
         - /bin/sh
         - '-c'
@@ -895,7 +897,7 @@ spec:
         - name: GENESIS_FORK_VERSION
           value: '0x20000089'
         - name: GENESIS_TIMESTAMP
-          value: '1781014218'
+          value: '1781023437'
       ports:
         - name: http
           containerPort: 18550

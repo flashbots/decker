@@ -41,7 +41,10 @@ spec:
               containerPort: 6379
           volumeMounts: []
         - name: housekeeper-mb-1
-          image: 'localhost/flashbots/mev-boost-relay:decker-known-validators'
+          image:
+            repo: 'https://github.com/flashbots/mev-boost-relay'
+            ref: caner/devnet-cold-starts
+            cmd: podman build -t $IMAGE .
           command:
             - /bin/sh
             - '-c'
@@ -67,7 +70,10 @@ spec:
               value: '0x20000095'
           volumeMounts: []
         - name: mev-boost-relay-1
-          image: 'localhost/flashbots/mev-boost-relay:decker-known-validators'
+          image:
+            repo: 'https://github.com/flashbots/mev-boost-relay'
+            ref: caner/devnet-cold-starts
+            cmd: podman build -t $IMAGE .
           command:
             - /bin/sh
             - '-c'

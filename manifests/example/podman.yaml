@@ -79,14 +79,14 @@ spec:
         - name: artifacts
           mountPath: /artifacts
           readOnly: true
-        - name: data
+        - name: el-1-data
           mountPath: /data_reth
   volumes:
     - name: artifacts
       hostPath:
-        path: '${DECKER_ROOT}/artifacts'
+        path: '${DECKER_ROOT}/runtime/artifacts'
         type: Directory
-    - name: data
+    - name: el-1-data
       emptyDir: {}
 ---
 apiVersion: v1

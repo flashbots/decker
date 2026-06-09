@@ -32,7 +32,7 @@ spec:
             - name: GENESIS_FORK_VERSION
               value: '0x20000089'
             - name: GENESIS_TIMESTAMP
-              value: '1781014218'
+              value: '1781023437'
           ports:
             - name: http
               containerPort: 18550

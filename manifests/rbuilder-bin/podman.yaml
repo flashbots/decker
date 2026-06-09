@@ -162,7 +162,8 @@ spec:
           hostPort: 6379
       volumeMounts: []
     - name: housekeeper-mb-1
-      image: 'localhost/flashbots/mev-boost-relay:decker-known-validators'
+      image: 'decker-mev-boost-relay:caner-devnet-cold-starts'
+      imagePullPolicy: Never
       command:
         - /bin/sh
         - '-c'
@@ -188,7 +189,8 @@ spec:
           value: '0x20000095'
       volumeMounts: []
     - name: mev-boost-relay-1
-      image: 'localhost/flashbots/mev-boost-relay:decker-known-validators'
+      image: 'decker-mev-boost-relay:caner-devnet-cold-starts'
+      imagePullPolicy: Never
       command:
         - /bin/sh
         - '-c'
