@@ -1,5 +1,5 @@
 import { isAbsolute, join, toFileUrl } from "jsr:@std/path@^1.0.0";
-import { bold, cyan, dim, green, ms, red } from "./term.ts";
+import { done, fail, step } from "./term.ts";
 
 export type DeckerProject = {
   decker: {
@@ -53,18 +53,18 @@ export async function clone(p: DeckerProject): Promise<void> {
   if (!src) throw new Error("decker.source required to clone");
   const ref = p.decker.ref ?? "main";
   const dst = intoDir(p);
-  console.log(`${dim("→")} cloning ${bold(src)}${dim(`@${ref}`)} → ${cyan(dst)}`);
-  const t0 = performance.now();
-  const { code } = await new Deno.Command("git", {
+  const sp = step(`cloning ${src}@${ref}`);
+  const { code, stderr } = await new Deno.Command("git", {
     args: ["clone", "--quiet", "--depth", "1", "--branch", ref, src, dst],
-    stdout: "inherit",
-    stderr: "inherit",
+    stdout: "piped",
+    stderr: "piped",
   }).output();
   if (code !== 0) {
-    console.error(red("✗ git clone failed"));
+    fail(sp, "git clone failed");
+    await Deno.stderr.write(stderr);
     throw new Error("clone failed");
   }
-  console.log(`${green("✓")} cloned ${dim(`(${ms(t0)})`)}`);
+  done(sp, dst);
 }
 
 export async function ensureClone(p: DeckerProject): Promise<string> {

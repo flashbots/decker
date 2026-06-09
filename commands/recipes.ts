@@ -1,4 +1,5 @@
 import { Command } from "jsr:@cliffy/command@^1.0.0-rc.7";
+import { accent } from "../utils/term.ts";
 
 const RECIPES_DIR = new URL("../recipes/", import.meta.url);
 
@@ -11,5 +12,5 @@ export const command = new Command()
       names.push(entry.name.slice(0, -3));
     }
     names.sort();
-    for (const n of names) console.log(n);
+    for (const n of names) console.log(`  ${accent(n)}`);
   });

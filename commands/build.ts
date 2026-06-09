@@ -1,6 +1,6 @@
 import { Command } from "jsr:@cliffy/command@^1.0.0-rc.7";
 import { buildOne, missingBinaries } from "../utils/build.ts";
-import { bold, dim, green, yellow } from "../utils/term.ts";
+import { done, step, warn } from "../utils/term.ts";
 
 const RECIPES_DIR = new URL("../recipes/", import.meta.url);
 
@@ -18,11 +18,12 @@ export const command = new Command()
   .action(async (_, ...recipes: string[]) => {
     const targets = recipes.length === 0 ? await listRecipes() : recipes;
     for (const r of targets) {
+      const sp = step(`rendering ${r}`);
       const { name, binaries } = await buildOne(r);
-      console.log(`${green("✓")} rendered ${bold(name)} ${dim(`→ manifests/${name}/`)}`);
+      done(sp, `manifests/${name}/`);
       const missing = missingBinaries(binaries);
       if (missing.length > 0) {
-        console.log(`  ${yellow("!")} host binaries not found: ${missing.join(", ")}`);
+        console.log(`  ${warn("!")} host binaries not found: ${missing.join(", ")}`);
       }
     }
   });

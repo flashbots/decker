@@ -1,5 +1,5 @@
 import { Command } from "jsr:@cliffy/command@^1.0.0-rc.7";
-import { dim, yellow } from "../utils/term.ts";
+import { dim, success, warn } from "../utils/term.ts";
 
 const SRC = new URL("../decker.example.ts", import.meta.url).pathname;
 
@@ -25,11 +25,11 @@ export const command = new Command()
   .action(async () => {
     const dst = `${Deno.cwd()}/decker.ts`;
     if (await exists(dst)) {
-      if (!await confirm(`${yellow("?")} ${dst} exists. Overwrite? [y/N] `)) {
+      if (!await confirm(`${warn("?")} ${dst} exists. Overwrite? [y/N] `)) {
         console.log(dim("aborted"));
         return;
       }
     }
     await Deno.copyFile(SRC, dst);
-    console.log(`wrote ${dst}`);
+    console.log(`${success("✓")} wrote ${dst}`);
   });

@@ -13,6 +13,7 @@ import {
   Transaction,
   Wallet,
 } from "npm:ethers@^6.13.0";
+import { accent, dim, err, success, warn } from "../utils/term.ts";
 
 const STATIC_PREFUNDED = [
   "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
@@ -100,16 +101,16 @@ export async function runTest(opts: TestOpts): Promise<number> {
   const wallet = new Wallet(STATIC_PREFUNDED[1]);
   const toAddress = new Wallet(STATIC_PREFUNDED[0]).address;
 
-  if (opts.insecure) console.warn("note: --insecure is a no-op on Deno; set DENO_CERT to trust a self-signed CA");
+  if (opts.insecure) console.warn(warn("note: --insecure is a no-op on Deno; set DENO_CERT to trust a self-signed CA"));
 
   const target = makeClient(opts.rpc, wallet);
   const el = opts.rpc === elRpcUrl ? target : makeClient(elRpcUrl, wallet);
 
   const cid = await chainId(el);
-  console.log(`Chain ID: ${cid}`);
+  console.log(`${dim("Chain ID:")} ${accent(String(cid))}`);
 
   const nonce = await pendingNonce(el, wallet.address);
-  console.log(`Nonce: ${nonce}`);
+  console.log(`${dim("Nonce:")}    ${accent(String(nonce))}`);
 
   const tx = Transaction.from({
     type: 0,
@@ -123,17 +124,17 @@ export async function runTest(opts: TestOpts): Promise<number> {
   });
   const signed = await wallet.signTransaction(tx);
 
-  console.log(`Sending transaction at ${hhmmss(new Date())}`);
+  console.log(`${dim("Sending transaction at")} ${accent(hhmmss(new Date()))}`);
   const txHash = await sendRawTx(target, signed);
-  console.log(`TX Hash: ${txHash}`);
+  console.log(`${dim("TX Hash:")}  ${accent(txHash)}`);
 
-  console.log("Waiting for receipt...");
+  console.log(dim("Waiting for receipt…"));
   const deadline = opts.timeoutMs > 0 ? Date.now() + opts.timeoutMs : Infinity;
   let attempts = 0;
 
   while (true) {
     if (Date.now() >= deadline) {
-      console.error(`timeout waiting for transaction receipt after ${opts.timeoutMs}ms`);
+      console.error(err(`✗ timeout waiting for transaction receipt after ${opts.timeoutMs}ms`));
       return 1;
     }
     await new Promise((r) => setTimeout(r, 1000));
@@ -148,29 +149,29 @@ export async function runTest(opts: TestOpts): Promise<number> {
       const blockNumber = parseInt(receipt.blockNumber, 16);
       const gasUsed = parseInt(receipt.gasUsed, 16);
       const status = parseInt(receipt.status, 16);
-      console.log("Receipt received!");
-      console.log(`  Block Number: ${blockNumber}`);
-      console.log(`  Gas Used: ${gasUsed}`);
-      console.log(`  Status: ${status}`);
+      console.log(`${success("✓")} Receipt received`);
+      console.log(`  ${dim("Block Number:")} ${accent(String(blockNumber))}`);
+      console.log(`  ${dim("Gas Used:")}     ${accent(String(gasUsed))}`);
+      console.log(`  ${dim("Status:")}       ${accent(String(status))}`);
 
       const extraHex = await getBlockExtraData(el, receipt.blockNumber);
       const extraStr = toUtf8String(getBytes(extraHex));
-      console.log(`  Extra Data: ${extraStr}`);
+      console.log(`  ${dim("Extra Data:")}   ${accent(extraStr)}`);
 
       if (opts.expectedExtraData !== undefined && opts.expectedExtraData !== "") {
         if (extraStr !== opts.expectedExtraData) {
-          console.log("  Extra Data check: failed");
-          console.error(`extra data mismatch: expected ${JSON.stringify(opts.expectedExtraData)}`);
+          console.log(`  ${err("✗")} Extra Data check: ${err("failed")}`);
+          console.error(err(`extra data mismatch: expected ${JSON.stringify(opts.expectedExtraData)}`));
           return 1;
         }
-        console.log("  Extra Data check: passed");
+        console.log(`  ${success("✓")} Extra Data check: ${success("passed")}`);
       }
       return 0;
     }
 
     attempts++;
     if (opts.retries > 0 && attempts >= opts.retries) {
-      console.error(`failed to get transaction receipt after ${opts.retries} attempts`);
+      console.error(err(`✗ failed to get transaction receipt after ${opts.retries} attempts`));
       return 1;
     }
   }

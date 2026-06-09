@@ -2,13 +2,13 @@ import { Command } from "jsr:@cliffy/command@^1.0.0-rc.7";
 import { loadRecipe } from "../utils/build.ts";
 import { lookup } from "../utils/resolve.ts";
 import { portNum } from "../utils/types.ts";
-import { bold, cyan, dim, yellow } from "../utils/term.ts";
+import { accent, bold, dim, muted, rule, warn } from "../utils/term.ts";
 import { down } from "./down.ts";
-import { printAttachIfProcesses, printDozzle, resolveTarget, runManifest, upTarget } from "./up.ts";
+import { printSummary, resolveTarget, runManifest, upTarget } from "./up.ts";
 
 async function advertise(target: string) {
   const { recipe } = await loadRecipe(target);
-  console.log("");
+  rule("services");
   const advertised = [
     ...recipe.pods.flatMap((p) => p.containers),
     ...(recipe.processes ?? []),
@@ -16,16 +16,14 @@ async function advertise(target: string) {
   for (const c of advertised) {
     const proto = lookup(c.prototype);
     const entries = Object.entries(proto.ports);
-    console.log(`  ${bold(cyan(c.name))}${entries.length === 0 ? dim("  (no ports)") : ""}`);
+    console.log(`  ${bold(accent(c.name))}${entries.length === 0 ? dim("  (no ports)") : ""}`);
     for (const [name, spec] of entries) {
-      console.log(`    ${name.padEnd(10)} ${yellow(String(portNum(spec)))}`);
+      console.log(`    ${name.padEnd(10)} ${warn(String(portNum(spec)))}`);
     }
-    console.log("");
   }
-  printDozzle();
-  await printAttachIfProcesses();
+  await printSummary();
   console.log("");
-  console.log(`  ${dim("─ Ctrl+C to stop ─")}`);
+  console.log(`  ${muted("Ctrl+C to stop")}`);
 }
 
 export const command = new Command()
