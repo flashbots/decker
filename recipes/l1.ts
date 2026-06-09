@@ -1,7 +1,13 @@
 import type { Recipe } from "../utils/types.ts";
+import { relayWarmup } from "../scripts/relay-warmup.ts";
 
 export const recipe: Recipe = {
-  artifacts: "l1",
+  artifacts: { generator: "l1", fork: "electra" },
+  scripts: [
+    relayWarmup({
+      relays: [{ container: "mev-boost-relay-1" }],
+    }),
+  ],
   pods: [
     {
       name: "el-1",
@@ -12,7 +18,7 @@ export const recipe: Recipe = {
     {
       name: "beacon-1",
       containers: [
-        { name: "beacon-1", prototype: "lighthouse-beacon", refs: { el: "el-1" } },
+        { name: "beacon-1", prototype: "lighthouse-beacon", refs: { el: "el-1", builder: "mev-boost-relay-1" } },
       ],
     },
     {
@@ -24,7 +30,18 @@ export const recipe: Recipe = {
     {
       name: "mev-boost-relay-1",
       containers: [
-        { name: "mev-boost-relay-1", prototype: "mev-boost-relay", refs: { beacon: "beacon-1" } },
+        { name: "pg-mb-1",    prototype: "mev-boost-relay-postgres" },
+        { name: "redis-mb-1", prototype: "redis" },
+        {
+          name: "housekeeper-mb-1",
+          prototype: "mev-boost-housekeeper",
+          refs: { beacon: "beacon-1", postgres: "pg-mb-1", redis: "redis-mb-1" },
+        },
+        {
+          name: "mev-boost-relay-1",
+          prototype: "mev-boost-relay",
+          refs: { beacon: "beacon-1", postgres: "pg-mb-1", redis: "redis-mb-1", el: "el-1" },
+        },
       ],
     },
   ],

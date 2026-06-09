@@ -1,18 +1,25 @@
 import { findComponent, lookup, makeCtx } from "./resolve.ts";
 import { portNum, portProtocol } from "./types.ts";
-import type { ConfigFile, Ctx, Pod, Ports, Recipe, Volume, VolumeMount } from "./types.ts";
+import type { ConfigFile, Ctx, ImageBuildSpec, Pod, Ports, Recipe, Volume, VolumeMount } from "./types.ts";
+import { imageTag } from "./image-build.ts";
 
 export const DOZZLE_PORT = 18080;
 
-export function renderPodman(recipe: Recipe): unknown[] {
+export type RenderPodmanResult = {
+  docs: unknown[];
+  imageBuilds: Map<string, ImageBuildSpec>;
+};
+
+export function renderPodman(recipe: Recipe): RenderPodmanResult {
   const ctx = makeCtx(recipe, (loc) => hostFor(loc));
+  const imageBuilds = new Map<string, ImageBuildSpec>();
   const docs: unknown[] = [];
   for (const pod of recipe.pods) {
-    const { configMaps, pod: podDoc } = podDocs(pod, recipe, ctx);
+    const { configMaps, pod: podDoc } = podDocs(pod, recipe, ctx, imageBuilds);
     docs.push(...configMaps, podDoc);
   }
   docs.push(dozzlePod());
-  return docs;
+  return { docs, imageBuilds };
 }
 
 function hostFor(loc: ReturnType<typeof findComponent>): string {
@@ -42,7 +49,7 @@ function dozzlePod() {
   };
 }
 
-function podDocs(pod: Pod, recipe: Recipe, ctx: Ctx) {
+function podDocs(pod: Pod, recipe: Recipe, ctx: Ctx, imageBuilds: Map<string, ImageBuildSpec>) {
   const containers: unknown[] = [];
   const volsByName = new Map<string, Volume>();
   const configMaps: unknown[] = [];
@@ -90,9 +97,26 @@ function podDocs(pod: Pod, recipe: Recipe, ctx: Ctx) {
 
     const ports = expandPodmanPorts(c.ports);
     const env = expandEnv(c.env);
+    let imageStr: string;
+    let pullPolicy: string | undefined;
+    if (typeof c.image === "string") {
+      imageStr = c.image;
+    } else {
+      imageStr = imageTag(c.image);
+      pullPolicy = "Never";
+      const existing = imageBuilds.get(imageStr);
+      if (existing) {
+        if (existing.repo !== c.image.repo || existing.ref !== c.image.ref || existing.cmd !== c.image.cmd) {
+          throw new Error(`image tag ${imageStr} produced by conflicting ImageBuildSpec`);
+        }
+      } else {
+        imageBuilds.set(imageStr, c.image);
+      }
+    }
     containers.push({
       name: def.name,
-      image: c.image,
+      image: imageStr,
+      ...(pullPolicy ? { imagePullPolicy: pullPolicy } : {}),
       ...(c.command ? { command: c.command } : {}),
       ...(c.args ? { args: c.args } : {}),
       ...(env.length > 0 ? { env } : {}),

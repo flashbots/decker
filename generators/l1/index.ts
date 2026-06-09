@@ -17,6 +17,7 @@ const GENESIS_VALIDATORS_ROOT_HEX =
 
 export type GenerateOpts = {
   outDir: string;
+  fork: string;
   blockTimeSeconds?: number;
   genesisDelaySeconds?: number;
 };
@@ -26,6 +27,7 @@ export type GenerateResult = {
 };
 
 export async function generate(opts: GenerateOpts): Promise<GenerateResult> {
+  const { fork } = opts;
   const blockTimeSeconds = opts.blockTimeSeconds ?? DEFAULT_L1_BLOCK_TIME_SECONDS;
   const delay = Math.max(opts.genesisDelaySeconds ?? MIN_GENESIS_DELAY_SECONDS, MIN_GENESIS_DELAY_SECONDS);
   const genesisTimeSeconds = Math.floor(Date.now() / 1000) + delay;
@@ -42,11 +44,11 @@ export async function generate(opts: GenerateOpts): Promise<GenerateResult> {
 
   await Deno.writeTextFile(
     `${testnetDir}/config.yaml`,
-    await renderClConfig({ blockTimeSeconds }),
+    await renderClConfig({ blockTimeSeconds, fork }),
   );
 
-  await Deno.writeTextFile(`${outDir}/genesis.json`, await renderElGenesis({ genesisTimeSeconds }));
-  await Deno.writeFile(`${testnetDir}/genesis.ssz`, await renderGenesisSsz({ genesisTimeSeconds }));
+  await Deno.writeTextFile(`${outDir}/genesis.json`, await renderElGenesis({ genesisTimeSeconds, fork }));
+  await Deno.writeFile(`${testnetDir}/genesis.ssz`, await renderGenesisSsz({ genesisTimeSeconds, fork }));
 
   const keys = await loadBlsKeys();
   await writeValidatorKeystores(`${outDir}/data_validator`, keys);

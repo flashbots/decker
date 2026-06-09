@@ -1,8 +1,8 @@
 import { Command } from "jsr:@cliffy/command@^1.0.0-rc.7";
 
 const DECKER_ROOT = new URL("../", import.meta.url).pathname.replace(/\/$/, "");
-const RUNTIME_PODMAN = `${DECKER_ROOT}/.runtime/podman.yaml`;
-const RUNTIME_PC = `${DECKER_ROOT}/.runtime/process-compose.yaml`;
+const RUNTIME_PODMAN = `${DECKER_ROOT}/runtime/podman.yaml`;
+const RUNTIME_PC = `${DECKER_ROOT}/runtime/process-compose.yaml`;
 
 async function fileExists(p: string): Promise<boolean> {
   try {

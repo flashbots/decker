@@ -3,13 +3,13 @@ import { dirname, isAbsolute } from "jsr:@std/path@^1.0.0";
 import { renderPodman } from "./render-podman.ts";
 import { renderDeploy } from "./render-deploy.ts";
 import { renderProcessCompose } from "./render-process-compose.ts";
-import type { Recipe } from "./types.ts";
+import type { ImageBuildSpec, Recipe } from "./types.ts";
 
 const DECKER_ROOT = new URL("../", import.meta.url).pathname.replace(/\/$/, "");
 const yamlOpts = { lineWidth: -1, useAnchors: false, skipInvalid: false } as const;
 
 function resolve(recipe: Recipe): Recipe {
-  const p = recipe.artifactsHostPath ?? ".runtime/artifacts";
+  const p = recipe.artifactsHostPath ?? "runtime/artifacts";
   return { ...recipe, artifactsHostPath: isAbsolute(p) ? p : `\${DECKER_ROOT}/${p}` };
 }
 
@@ -32,6 +32,7 @@ function validate(recipe: Recipe) {
 
 export type EmitResult = {
   binaries: string[];
+  imageBuilds: Map<string, ImageBuildSpec>;
 };
 
 export async function emit(name: string, recipe: Recipe): Promise<EmitResult> {
@@ -39,7 +40,7 @@ export async function emit(name: string, recipe: Recipe): Promise<EmitResult> {
   recipe = resolve(recipe);
   const outDir = `${DECKER_ROOT}/manifests/${name}`;
   await Deno.mkdir(`${outDir}/deploy`, { recursive: true });
-  const podmanDocs = renderPodman(recipe);
+  const { docs: podmanDocs, imageBuilds } = renderPodman(recipe);
   const podmanBody = podmanDocs.map((d) => stringify(d, yamlOpts)).join("---\n");
   await Deno.writeTextFile(`${outDir}/podman.yaml`, podmanBody);
 
@@ -49,7 +50,7 @@ export async function emit(name: string, recipe: Recipe): Promise<EmitResult> {
     await Deno.writeTextFile(`${outDir}/deploy/${f.filename}`, body);
   }
 
-  const pc = renderProcessCompose(recipe, `\${DECKER_ROOT}/.runtime`);
+  const pc = renderProcessCompose(recipe, `\${DECKER_ROOT}/runtime`);
   let binaries: string[] = [];
   if (pc) {
     binaries = pc.binaries;
@@ -62,12 +63,19 @@ export async function emit(name: string, recipe: Recipe): Promise<EmitResult> {
   }
 
   await materializeRuntime(outDir);
-  return { binaries };
+  return { binaries, imageBuilds };
 }
 
 async function materializeRuntime(outDir: string) {
-  const runtimeDir = `${DECKER_ROOT}/.runtime`;
-  await Deno.remove(runtimeDir, { recursive: true }).catch(() => {});
+  const runtimeDir = `${DECKER_ROOT}/runtime`;
+  try {
+    for await (const entry of Deno.readDir(runtimeDir)) {
+      if (entry.name === "artifacts") continue;
+      await Deno.remove(`${runtimeDir}/${entry.name}`, { recursive: true });
+    }
+  } catch (e) {
+    if (!(e instanceof Deno.errors.NotFound)) throw e;
+  }
   await copyExpanded(outDir, runtimeDir);
 }
 

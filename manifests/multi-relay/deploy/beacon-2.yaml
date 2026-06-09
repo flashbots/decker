@@ -1,23 +1,23 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: helix-beacon-1
+  name: beacon-2
   labels:
-    app.kubernetes.io/name: helix-beacon-1
+    app.kubernetes.io/name: beacon-2
     app.kubernetes.io/part-of: decker-l1
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app.kubernetes.io/name: helix-beacon-1
+      app.kubernetes.io/name: beacon-2
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: helix-beacon-1
+        app.kubernetes.io/name: beacon-2
         app.kubernetes.io/part-of: decker-l1
     spec:
       containers:
-        - name: helix-beacon-1
+        - name: beacon-2
           image: 'docker.io/sigp/lighthouse:v8.1.0'
           command:
             - lighthouse
@@ -33,27 +33,27 @@ spec:
             - '--enr-address'
             - 127.0.0.1
             - '--enr-udp-port'
-            - '19000'
+            - '29000'
             - '--enr-tcp-port'
-            - '19000'
+            - '29000'
             - '--enr-quic-port'
-            - '19100'
+            - '29100'
             - '--port'
-            - '19000'
+            - '29000'
             - '--quic-port'
-            - '19100'
+            - '29100'
             - '--http'
             - '--http-port'
-            - '13500'
+            - '23500'
             - '--http-address'
             - 0.0.0.0
             - '--http-allow-origin'
             - '*'
             - '--disable-packet-filter'
             - '--target-peers'
-            - '1'
+            - '5'
             - '--execution-endpoint'
-            - 'http://helix-sim-1:18551'
+            - 'http://el-2:28551'
             - '--execution-jwt'
             - /artifacts/jwtsecret
             - '--always-prepare-payload'
@@ -65,15 +65,15 @@ spec:
             - /dns4/beacon-1/tcp/9000
           ports:
             - name: http
-              containerPort: 13500
+              containerPort: 23500
             - name: p2p-tcp
-              containerPort: 19000
+              containerPort: 29000
               protocol: TCP
             - name: p2p-udp
-              containerPort: 19000
+              containerPort: 29000
               protocol: UDP
             - name: quic
-              containerPort: 19100
+              containerPort: 29100
               protocol: UDP
           volumeMounts:
             - name: artifacts
@@ -92,14 +92,14 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: helix-beacon-1
+  name: beacon-2
   labels:
-    app.kubernetes.io/name: helix-beacon-1
+    app.kubernetes.io/name: beacon-2
     app.kubernetes.io/part-of: decker-l1
 spec:
   selector:
-    app.kubernetes.io/name: helix-beacon-1
+    app.kubernetes.io/name: beacon-2
   ports:
     - name: http
-      port: 13500
+      port: 23500
       targetPort: http

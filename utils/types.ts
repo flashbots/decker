@@ -31,8 +31,14 @@ export function portInService(p: PortSpec): boolean {
   return typeof p === "number" ? true : p.service !== false;
 }
 
+export type ImageBuildSpec = {
+  repo: string;
+  ref: string;
+  cmd: string;
+};
+
 export type Container = {
-  image: string;
+  image: string | ImageBuildSpec;
   command?: string[];
   args?: string[];
   env?: Record<string, string>;
@@ -94,9 +100,19 @@ export type Pod = {
   containers: ContainerDef[];
 };
 
+export type L1ArtifactsSpec = {
+  generator: "l1";
+  fork: string;
+  blockTimeSeconds?: number;
+  genesisDelaySeconds?: number;
+};
+
+export type ArtifactsSpec = L1ArtifactsSpec;
+
+export type Script = (recipe: Recipe) => Promise<void> | void;
+
 export type Recipe = {
-  artifacts: string;
-  artifactsArgs?: string[];
+  artifacts: ArtifactsSpec;
   artifactsHostPath?: string;
   target?: {
     pods?: "k8s";
@@ -104,10 +120,12 @@ export type Recipe = {
   };
   pods: Pod[];
   processes?: ProcessDef[];
+  scripts?: Script[];
 };
 
 export type Ctx = {
   url(name: string, portName: string): string;
+  artifactsHostPath: string;
 };
 
 export type HostCtx = Ctx & {

@@ -1,12 +1,18 @@
-import type { ContainerDef, ContainerResult, Ctx, HostCtx, ProcessDef, ProcessResult } from "../utils/types.ts";
+import type { ContainerDef, ContainerResult, Ctx, HostCtx, Ports, ProcessDef, ProcessResult } from "../utils/types.ts";
+import { portNum } from "../utils/types.ts";
 
-export const ports = {
+export const ports: Ports = {
   rpc: 8545,
   authrpc: 8551,
   metrics: 9090,
 };
 
-export function buildContainer(_def: ContainerDef, _ctx: Ctx): ContainerResult {
+function resolvedPorts(def: ContainerDef | ProcessDef): Ports {
+  return { ...ports, ...((def.config?.ports as Ports | undefined) ?? {}) };
+}
+
+export function buildContainer(def: ContainerDef, _ctx: Ctx): ContainerResult {
+  const ps = resolvedPorts(def);
   return {
     container: {
       image: "ghcr.io/paradigmxyz/reth:v1.9.3",
@@ -22,17 +28,17 @@ export function buildContainer(_def: ContainerDef, _ctx: Ctx): ContainerResult {
         "--http",
         "--http.addr", "0.0.0.0",
         "--http.api", "admin,eth,web3,net,rpc,mev,flashbots",
-        "--http.port", String(ports.rpc),
-        "--authrpc.port", String(ports.authrpc),
+        "--http.port", String(portNum(ps.rpc)),
+        "--authrpc.port", String(portNum(ps.authrpc)),
         "--authrpc.addr", "0.0.0.0",
         "--authrpc.jwtsecret", "/artifacts/jwtsecret",
-        "--metrics", `0.0.0.0:${ports.metrics}`,
+        "--metrics", `0.0.0.0:${portNum(ps.metrics)}`,
         "--engine.persistence-threshold", "0",
         "--engine.memory-block-buffer-target", "0",
         "-vvv",
         "--disable-discovery",
       ],
-      ports,
+      ports: ps,
       volumeMounts: [
         { name: "artifacts", mountPath: "/artifacts", readOnly: true },
         { name: "data",      mountPath: "/data_reth" },
@@ -47,6 +53,7 @@ export function buildContainer(_def: ContainerDef, _ctx: Ctx): ContainerResult {
 
 export function buildProcess(def: ProcessDef, ctx: HostCtx): ProcessResult {
   const dataDir = ctx.dataPath(def.name, "data");
+  const ps = resolvedPorts(def);
   return {
     process: {
       command: [
@@ -61,11 +68,11 @@ export function buildProcess(def: ProcessDef, ctx: HostCtx): ProcessResult {
         "--http",
         "--http.addr", "0.0.0.0",
         "--http.api", "admin,eth,web3,net,rpc,mev,flashbots",
-        "--http.port", String(ports.rpc),
-        "--authrpc.port", String(ports.authrpc),
+        "--http.port", String(portNum(ps.rpc)),
+        "--authrpc.port", String(portNum(ps.authrpc)),
         "--authrpc.addr", "0.0.0.0",
         "--authrpc.jwtsecret", `${ctx.artifactsPath}/jwtsecret`,
-        "--metrics", `0.0.0.0:${ports.metrics}`,
+        "--metrics", `0.0.0.0:${portNum(ps.metrics)}`,
         "--engine.persistence-threshold", "0",
         "--engine.memory-block-buffer-target", "0",
         "-vvv",

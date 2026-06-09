@@ -60,14 +60,14 @@ spec:
         - name: artifacts
           mountPath: /artifacts
           readOnly: true
-        - name: data
+        - name: el-1-data
           mountPath: /data_reth
   volumes:
     - name: artifacts
       hostPath:
-        path: '${DECKER_ROOT}/.runtime/artifacts'
+        path: '${DECKER_ROOT}/runtime/artifacts'
         type: Directory
-    - name: data
+    - name: el-1-data
       emptyDir: {}
 ---
 apiVersion: v1
@@ -145,14 +145,14 @@ spec:
         - name: artifacts
           mountPath: /artifacts
           readOnly: true
-        - name: data
+        - name: beacon-1-data
           mountPath: /data_beacon
   volumes:
     - name: artifacts
       hostPath:
-        path: '${DECKER_ROOT}/.runtime/artifacts'
+        path: '${DECKER_ROOT}/runtime/artifacts'
         type: Directory
-    - name: data
+    - name: beacon-1-data
       emptyDir: {}
 ---
 apiVersion: v1
@@ -191,38 +191,8 @@ spec:
   volumes:
     - name: artifacts
       hostPath:
-        path: '${DECKER_ROOT}/.runtime/artifacts'
+        path: '${DECKER_ROOT}/runtime/artifacts'
         type: Directory
----
-apiVersion: v1
-kind: Pod
-metadata:
-  name: mev-boost-relay-1
-  labels:
-    app: mev-boost-relay-1
-spec:
-  restartPolicy: OnFailure
-  containers:
-    - name: mev-boost-relay-1
-      image: 'docker.io/flashbots/playground-utils:cc6f172493d7ef6b88a5b7895f4b8619806c99f9'
-      command:
-        - mev-boost-relay
-      args:
-        - '--api-listen-addr'
-        - 0.0.0.0
-        - '--api-listen-port'
-        - '5555'
-        - '--beacon-client-addr'
-        - 'http://beacon-1:3500'
-      env:
-        - name: ALLOW_SYNCING_BEACON_NODE
-          value: '1'
-      ports:
-        - name: http
-          containerPort: 5555
-          hostPort: 5555
-      volumeMounts: []
-  volumes: []
 ---
 apiVersion: v1
 kind: Pod

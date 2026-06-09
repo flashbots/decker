@@ -1,16 +1,16 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: rbuilder-1-config
+  name: rbuilder-2-config
   labels:
     app.kubernetes.io/part-of: decker-l1
 data:
   rbuilder.toml: |
     log_json = false
     log_level = "info,rbuilder=debug"
-    redacted_telemetry_server_port = 6061
+    redacted_telemetry_server_port = 8846
     redacted_telemetry_server_ip = "0.0.0.0"
-    full_telemetry_server_port = 6060
+    full_telemetry_server_port = 8847
     full_telemetry_server_ip = "0.0.0.0"
 
     chain = "/artifacts/genesis.json"
@@ -21,22 +21,22 @@ data:
     coinbase_secret_key = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
     relay_secret_key = "0x25295f0d1d592a90b333e26e85149708208e9f8e8bc18f6c77bd62f8ad7a6866"
 
-    cl_node_url = ["http://beacon-1:3500"]
+    cl_node_url = ["http://beacon-2:23500"]
     genesis_fork_version = "0x20000089"
-    jsonrpc_server_port = 8745
+    jsonrpc_server_port = 8845
     jsonrpc_server_ip = "0.0.0.0"
-    extra_data = "rbuilder-1 ⚡"
+    extra_data = "rbuilder-2 ⚡"
 
     ignore_cancellable_orders = true
     root_hash_use_sparse_trie = true
     root_hash_compare_sparse_trie = false
     slot_delta_to_start_bidding_ms = -20000
     live_builders = ["mp-ordering"]
-    enabled_relays = ["decker-mev-boost-relay"]
+    enabled_relays = ["mev-boost-relay-1"]
 
     [[relays]]
-    name = "decker-mev-boost-relay"
-    url = "http://helix-1:4040"
+    name = "mev-boost-relay-1"
+    url = "http://mev-boost-relay-1:9062"
     use_ssz_for_submit = false
     use_gzip_for_submit = false
     mode = "full"
@@ -52,24 +52,24 @@ data:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: el-1
+  name: el-2
   labels:
-    app.kubernetes.io/name: el-1
+    app.kubernetes.io/name: el-2
     app.kubernetes.io/part-of: decker-l1
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app.kubernetes.io/name: el-1
+      app.kubernetes.io/name: el-2
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: el-1
+        app.kubernetes.io/name: el-2
         app.kubernetes.io/part-of: decker-l1
     spec:
       shareProcessNamespace: true
       containers:
-        - name: el-1
+        - name: el-2
           image: 'ghcr.io/paradigmxyz/reth:v1.9.3'
           command:
             - /usr/local/bin/reth
@@ -93,15 +93,15 @@ spec:
             - '--http.api'
             - 'admin,eth,web3,net,rpc,mev,flashbots'
             - '--http.port'
-            - '8545'
+            - '18545'
             - '--authrpc.port'
-            - '8551'
+            - '28551'
             - '--authrpc.addr'
             - 0.0.0.0
             - '--authrpc.jwtsecret'
             - /artifacts/jwtsecret
             - '--metrics'
-            - '0.0.0.0:9090'
+            - '0.0.0.0:19090'
             - '--engine.persistence-threshold'
             - '0'
             - '--engine.memory-block-buffer-target'
@@ -110,32 +110,33 @@ spec:
             - '--disable-discovery'
           ports:
             - name: rpc
-              containerPort: 8545
+              containerPort: 18545
             - name: authrpc
-              containerPort: 8551
+              containerPort: 28551
             - name: metrics
-              containerPort: 9090
+              containerPort: 19090
           volumeMounts:
             - name: artifacts
               mountPath: /artifacts
               readOnly: true
             - name: data
               mountPath: /data_reth
-        - name: rbuilder-1
+        - name: rbuilder-2
           image: 'ghcr.io/flashbots/rbuilder:sha-0f2ea0c'
           args:
             - run
             - /config/rbuilder.toml
           ports:
             - name: http
-              containerPort: 8745
+              containerPort: 8845
+              protocol: TCP
           volumeMounts:
             - name: artifacts
               mountPath: /artifacts
               readOnly: true
             - name: data
               mountPath: /data_reth
-            - name: rbuilder-1-config
+            - name: rbuilder-2-config
               mountPath: /config/rbuilder.toml
               subPath: rbuilder.toml
               readOnly: true
@@ -146,30 +147,27 @@ spec:
             readOnly: true
         - name: data
           emptyDir: {}
-        - name: rbuilder-1-config
+        - name: rbuilder-2-config
           configMap:
-            name: rbuilder-1-config
+            name: rbuilder-2-config
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: el-1
+  name: el-2
   labels:
-    app.kubernetes.io/name: el-1
+    app.kubernetes.io/name: el-2
     app.kubernetes.io/part-of: decker-l1
 spec:
   selector:
-    app.kubernetes.io/name: el-1
+    app.kubernetes.io/name: el-2
   ports:
     - name: rpc
-      port: 8545
+      port: 18545
       targetPort: rpc
     - name: authrpc
-      port: 8551
+      port: 28551
       targetPort: authrpc
     - name: metrics
-      port: 9090
+      port: 19090
       targetPort: metrics
-    - name: http
-      port: 8745
-      targetPort: http

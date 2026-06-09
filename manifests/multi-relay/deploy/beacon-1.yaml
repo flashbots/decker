@@ -51,7 +51,7 @@ spec:
             - '*'
             - '--disable-packet-filter'
             - '--target-peers'
-            - '1'
+            - '5'
             - '--execution-endpoint'
             - 'http://el-1:8551'
             - '--execution-jwt'
@@ -64,7 +64,10 @@ spec:
             - '--libp2p-addresses'
             - /dns4/helix-beacon-1/tcp/19000
             - '--builder'
-            - 'http://helix-1:4040'
+            - 'http://mev-boost-1:18550'
+            - '--builder-fallback-epochs-since-finalization'
+            - '0'
+            - '--builder-fallback-disable-checks'
           ports:
             - name: http
               containerPort: 3500

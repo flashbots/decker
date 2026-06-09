@@ -11,8 +11,9 @@ const fromHex = (h: string): Uint8Array => {
 };
 
 const GENESIS_VALIDATORS_ROOT = fromHex("9624293efb019b5252a8be86736907ef1cd263cefc17f4e10bcf7e266d42f02d");
-const FORK_PREVIOUS_VERSION = fromHex("20000093"); // Deneb
-const FORK_CURRENT_VERSION = fromHex("20000094"); // Electra
+const DENEB_FORK_VERSION = fromHex("20000093");
+const ELECTRA_FORK_VERSION = fromHex("20000094");
+const FULU_FORK_VERSION = fromHex("20000095");
 const EL_STATE_ROOT = fromHex("48231728167f36a5cf6e8af0e95718a6f3f214a59a43d0d9b30f82a3013c8ba1");
 const EMPTY_TRIE_ROOT = fromHex("56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421");
 
@@ -36,22 +37,24 @@ function emptyDepositRoot(): Uint8Array {
 
 export type GenesisSszOpts = {
   genesisTimeSeconds: number;
+  fork: string;
 };
 
 export async function renderGenesisSsz(opts: GenesisSszOpts): Promise<Uint8Array> {
   const blsKeys = await loadBlsKeys();
   const elHash = computeElGenesisHash(opts.genesisTimeSeconds);
 
-  const state = ssz.electra.BeaconState.defaultValue();
+  const sszFork = opts.fork === "fulu" ? ssz.fulu : ssz.electra;
+  const state = sszFork.BeaconState.defaultValue();
 
   state.genesisTime = opts.genesisTimeSeconds;
   state.genesisValidatorsRoot = GENESIS_VALIDATORS_ROOT;
 
-  state.fork.previousVersion = FORK_PREVIOUS_VERSION;
-  state.fork.currentVersion = FORK_CURRENT_VERSION;
+  state.fork.previousVersion = opts.fork === "fulu" ? ELECTRA_FORK_VERSION : DENEB_FORK_VERSION;
+  state.fork.currentVersion = opts.fork === "fulu" ? FULU_FORK_VERSION : ELECTRA_FORK_VERSION;
 
-  state.latestBlockHeader.bodyRoot = ssz.electra.BeaconBlockBody.hashTreeRoot(
-    ssz.electra.BeaconBlockBody.defaultValue(),
+  state.latestBlockHeader.bodyRoot = sszFork.BeaconBlockBody.hashTreeRoot(
+    sszFork.BeaconBlockBody.defaultValue(),
   );
 
   state.eth1Data.depositRoot = emptyDepositRoot();
@@ -101,5 +104,7 @@ export async function renderGenesisSsz(opts: GenesisSszOpts): Promise<Uint8Array
 
   state.depositRequestsStartIndex = UNSET_DEPOSIT_REQUESTS_START_INDEX;
 
-  return ssz.electra.BeaconState.serialize(state);
+  return opts.fork === "fulu"
+    ? ssz.fulu.BeaconState.serialize(state as ReturnType<typeof ssz.fulu.BeaconState.defaultValue>)
+    : ssz.electra.BeaconState.serialize(state);
 }

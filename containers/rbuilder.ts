@@ -1,7 +1,9 @@
 import type { ContainerDef, ContainerResult, Ctx, HostCtx, ProcessDef, ProcessResult } from "../utils/types.ts";
 
+const DEFAULT_HTTP_PORT = 8745;
+
 export const ports = {
-  http: 8745,
+  http: { port: DEFAULT_HTTP_PORT, protocol: "TCP" as const, service: false },
 };
 
 const rbuilderConfigFor = (
@@ -11,13 +13,15 @@ const rbuilderConfigFor = (
   rethIpcPath: string,
   bindIp: string,
   clUrl: string,
+  relayName: string,
   relayUrl: string,
+  httpPort: number,
 ) => `\
 log_json = false
 log_level = "info,rbuilder=debug"
-redacted_telemetry_server_port = 6061
+redacted_telemetry_server_port = ${httpPort + 1}
 redacted_telemetry_server_ip = "${bindIp}"
-full_telemetry_server_port = 6060
+full_telemetry_server_port = ${httpPort + 2}
 full_telemetry_server_ip = "${bindIp}"
 
 chain = "${chainPath}"
@@ -30,7 +34,7 @@ relay_secret_key = "0x25295f0d1d592a90b333e26e85149708208e9f8e8bc18f6c77bd62f8ad
 
 cl_node_url = ["${clUrl}"]
 genesis_fork_version = "0x20000089"
-jsonrpc_server_port = ${ports.http}
+jsonrpc_server_port = ${httpPort}
 jsonrpc_server_ip = "${bindIp}"
 extra_data = "${name} ⚡"
 
@@ -39,10 +43,10 @@ root_hash_use_sparse_trie = true
 root_hash_compare_sparse_trie = false
 slot_delta_to_start_bidding_ms = -20000
 live_builders = ["mp-ordering"]
-enabled_relays = ["decker-mev-boost-relay"]
+enabled_relays = ["${relayName}"]
 
 [[relays]]
-name = "decker-mev-boost-relay"
+name = "${relayName}"
 url = "${relayUrl}"
 use_ssz_for_submit = false
 use_gzip_for_submit = false
@@ -69,6 +73,7 @@ function refs(def: { name: string; refs?: Record<string, string> }) {
 
 export function buildContainer(def: ContainerDef, ctx: Ctx): ContainerResult {
   const { beacon, relay } = refs(def);
+  const httpPort = (def.config?.port as number | undefined) ?? DEFAULT_HTTP_PORT;
   const toml = rbuilderConfigFor(
     def.name,
     "/artifacts/genesis.json",
@@ -76,13 +81,15 @@ export function buildContainer(def: ContainerDef, ctx: Ctx): ContainerResult {
     "/data_reth/reth.ipc",
     "0.0.0.0",
     ctx.url(beacon, "http"),
+    relay,
     ctx.url(relay, "http"),
+    httpPort,
   );
   return {
     container: {
       image: "ghcr.io/flashbots/rbuilder:sha-0f2ea0c",
       args: ["run", "/config/rbuilder.toml"],
-      ports,
+      ports: { http: { port: httpPort, protocol: "TCP" as const, service: false } },
       volumeMounts: [
         { name: "artifacts", mountPath: "/artifacts",         readOnly: true },
         { name: "data",      mountPath: "/data_reth" },
@@ -101,6 +108,7 @@ export function buildContainer(def: ContainerDef, ctx: Ctx): ContainerResult {
 export function buildProcess(def: ProcessDef, ctx: HostCtx): ProcessResult {
   const { el, beacon, relay } = refs(def);
   const rethDatadir = ctx.dataPath(el, "data");
+  const httpPort = (def.config?.port as number | undefined) ?? DEFAULT_HTTP_PORT;
   const toml = rbuilderConfigFor(
     def.name,
     `${ctx.artifactsPath}/genesis.json`,
@@ -108,7 +116,9 @@ export function buildProcess(def: ProcessDef, ctx: HostCtx): ProcessResult {
     `${rethDatadir}/reth.ipc`,
     "0.0.0.0",
     ctx.url(beacon, "http"),
+    relay,
     ctx.url(relay, "http"),
+    httpPort,
   );
   const tomlPath = ctx.configPath(def.name, "rbuilder.toml");
   return {

@@ -2,9 +2,11 @@ import { Command } from "jsr:@cliffy/command@^1.0.0-rc.7";
 import { isAbsolute, join, toFileUrl } from "jsr:@std/path@^1.0.0";
 import { generateArtifacts, loadRecipe, missingBinaries } from "../utils/build.ts";
 import { emit } from "../utils/emit.ts";
+import { ensureImages } from "../utils/image-build.ts";
 import { DEFAULT_MANIFEST, ensureClone, loadManifest } from "../utils/manifest.ts";
 import { DOZZLE_PORT } from "../utils/render-podman.ts";
 import { bold, cyan, dim, green, ms, red, underline } from "../utils/term.ts";
+import type { ImageBuildSpec, Recipe } from "../utils/types.ts";
 
 const DECKER_ROOT = new URL("../", import.meta.url).pathname.replace(/\/$/, "");
 
@@ -41,7 +43,7 @@ export function printDozzle() {
 }
 
 export async function printAttachIfProcesses() {
-  if (await fileExists(`${DECKER_ROOT}/.runtime/process-compose.yaml`)) {
+  if (await fileExists(`${DECKER_ROOT}/runtime/process-compose.yaml`)) {
     console.log(`  ${bold("Process logs (process-compose):")} ${cyan("decker attach")}`);
   }
 }
@@ -62,25 +64,14 @@ export async function runManifest(sub: "up" | "start", manifestPath: string): Pr
 export async function upTarget(target: string): Promise<number> {
   let yamlPath: string;
   let podCount: number | null = null;
+  let loadedRecipe: Recipe | null = null;
+  let imageBuilds: Map<string, ImageBuildSpec> = new Map();
 
   if (target.endsWith(".yaml")) {
     yamlPath = await Deno.realPath(target);
   } else {
     const { name, recipe } = await loadRecipe(target);
-
-    const t1 = performance.now();
-    const { binaries } = await emit(name, recipe);
-    console.log(`${green("✓")} rendered ${bold(name)} ${dim(`(${ms(t1)})`)}`);
-
-    const missing = missingBinaries(binaries);
-    if (missing.length > 0) {
-      console.error("");
-      console.error(red("✗ host binaries not found:"));
-      for (const b of missing) console.error(`    ${b}`);
-      console.error("");
-      console.error(`  ${dim("place them in ./bin/, set 'binary' in the recipe, or install on PATH")}`);
-      return 1;
-    }
+    loadedRecipe = recipe;
 
     const t0 = performance.now();
     try {
@@ -90,11 +81,41 @@ export async function upTarget(target: string): Promise<number> {
       return 1;
     }
     console.log(
-      `${green("✓")} artifacts generated ${dim(`(${recipe.artifacts}, ${ms(t0)})`)}`,
+      `${green("✓")} artifacts generated ${dim(`(${recipe.artifacts.generator}/${recipe.artifacts.fork}, ${ms(t0)})`)}`,
     );
 
-    yamlPath = `${DECKER_ROOT}/.runtime/podman.yaml`;
+    const t1 = performance.now();
+    const emitted = await emit(name, recipe);
+    imageBuilds = emitted.imageBuilds;
+    console.log(`${green("✓")} rendered ${bold(name)} ${dim(`(${ms(t1)})`)}`);
+
+    const missing = missingBinaries(emitted.binaries);
+    if (missing.length > 0) {
+      console.error("");
+      console.error(red("✗ host binaries not found:"));
+      for (const b of missing) console.error(`    ${b}`);
+      console.error("");
+      console.error(`  ${dim("place them in ./bin/, set 'binary' in the recipe, or install on PATH")}`);
+      return 1;
+    }
+
+    yamlPath = `${DECKER_ROOT}/runtime/podman.yaml`;
     podCount = recipe.pods.length + 1;
+  }
+
+  if (imageBuilds.size > 0) {
+    const t = performance.now();
+    try {
+      const built = await ensureImages(imageBuilds);
+      const skipped = imageBuilds.size - built.length;
+      const summary = built.length > 0
+        ? `built ${built.length}${skipped > 0 ? `, cached ${skipped}` : ""}`
+        : `cached ${skipped}`;
+      console.log(`${green("✓")} images ready ${dim(`(${summary}, ${ms(t)})`)}`);
+    } catch (e) {
+      console.error(red(`✗ image build failed: ${(e as Error).message}`));
+      return 1;
+    }
   }
 
   const pcPath = yamlPath.replace(/\/[^/]+\.yaml$/, "/process-compose.yaml");
@@ -113,6 +134,18 @@ export async function upTarget(target: string): Promise<number> {
   }
   const label = podCount === null ? "started" : `started ${podCount} pods`;
   console.log(`${green("✓")} ${label} ${dim(`(${ms(t2)})`)}`);
+
+  for (const script of loadedRecipe?.scripts ?? []) {
+    const ts = performance.now();
+    const label = script.name || "script";
+    try {
+      await script(loadedRecipe!);
+      console.log(`${green("✓")} ran ${label} ${dim(`(${ms(ts)})`)}`);
+    } catch (e) {
+      console.error(red(`✗ ${label} failed: ${(e as Error).message}`));
+      return 1;
+    }
+  }
 
   if (hasPC) {
     const t3 = performance.now();

@@ -1,5 +1,8 @@
+import { isAbsolute, join } from "jsr:@std/path@^1.0.0";
 import { portNum } from "./types.ts";
 import type { ContainerDef, Ctx, HostCtx, Pod, ProcessDef, Prototype, Recipe } from "./types.ts";
+
+const DECKER_ROOT = new URL("../", import.meta.url).pathname.replace(/\/$/, "");
 
 const CONTAINERS_DIR = new URL("../containers/", import.meta.url);
 
@@ -51,18 +54,26 @@ export function findComponent(recipe: Recipe, name: string): Located {
 function urlFor(recipe: Recipe, name: string, portName: string, host: (loc: Located) => string): string {
   const loc = findComponent(recipe, name);
   const proto = lookup(loc.def.prototype);
-  const port = proto.ports[portName];
+  const override = (loc.def.config?.ports as Record<string, unknown> | undefined)?.[portName];
+  const port = override ?? proto.ports[portName];
   if (port === undefined) {
     const label = typeof loc.def.prototype === "string" ? loc.def.prototype : "<inline>";
     throw new Error(`no port ${portName} on ${name} (${label})`);
   }
-  return `http://${host(loc)}:${portNum(port)}`;
+  return `http://${host(loc)}:${portNum(port as Parameters<typeof portNum>[0])}`;
 }
 
 export function makeCtx(recipe: Recipe, host: (loc: Located) => string): Ctx {
   return {
     url: (name, portName) => urlFor(recipe, name, portName, host),
+    artifactsHostPath: resolveArtifactsHostPath(recipe),
   };
+}
+
+function resolveArtifactsHostPath(recipe: Recipe): string {
+  const p = recipe.artifactsHostPath ?? "runtime/artifacts";
+  if (p.includes("${DECKER_ROOT}")) return p.replaceAll("${DECKER_ROOT}", DECKER_ROOT);
+  return isAbsolute(p) ? p : join(DECKER_ROOT, p);
 }
 
 export function makeHostCtx(

@@ -15,5 +15,5 @@ export const command = new Command()
       console.error(red(`✗ artifacts failed: ${(e as Error).message}`));
       Deno.exit(1);
     }
-    console.log(`${green("✓")} ${bold(name)} artifacts generated ${dim(`(${recipe.artifacts} → ${out}, ${ms(t0)})`)}`);
+    console.log(`${green("✓")} ${bold(name)} artifacts generated ${dim(`(${recipe.artifacts.generator}/${recipe.artifacts.fork} → ${out}, ${ms(t0)})`)}`);
   });

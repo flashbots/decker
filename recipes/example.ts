@@ -12,7 +12,7 @@ const hello: Prototype = {
 };
 
 export const recipe: Recipe = {
-  artifacts: "l1",
+  artifacts: { generator: "l1", fork: "electra" },
   pods: [
     {
       name: "hello",
