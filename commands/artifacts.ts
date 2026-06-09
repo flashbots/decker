@@ -3,7 +3,7 @@ import { artifactsHostPath, generateArtifacts, loadRecipe } from "../utils/build
 import { bold, dim, green, ms, red } from "../utils/term.ts";
 
 export const command = new Command()
-  .description("Generate a recipe's artifacts into its artifactsHostPath without starting pods")
+  .description("Generate a recipe's artifacts")
   .arguments("<target:string>")
   .action(async (_, target: string) => {
     const { name, recipe } = await loadRecipe(target);

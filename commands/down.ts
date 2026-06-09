@@ -35,7 +35,7 @@ export async function down(): Promise<number> {
 }
 
 export const command = new Command()
-  .description("Tear down the last `decker up` via podman kube down")
+  .description("Take down the last `decker up`")
   .action(async () => {
     Deno.exit(await down());
   });

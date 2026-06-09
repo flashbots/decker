@@ -29,7 +29,7 @@ async function advertise(target: string) {
 }
 
 export const command = new Command()
-  .description("Up a recipe, advertise ports, and down on Ctrl+C")
+  .description("Start and attach to a recipe (take down with Ctrl+C)")
   .arguments("[target:string]")
   .action(async (_, target?: string) => {
     const t = await resolveTarget(target);

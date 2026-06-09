@@ -20,11 +20,31 @@ const main = new Command()
   .version("0.1.0")
   .description("Decker — deck your own devnet");
 
+const COMMAND_ORDER = [
+  "init",
+  "spit",
+  "recipes",
+  "start",
+  "up",
+  "down",
+  "attach",
+  "test",
+  "build",
+  "artifacts",
+];
+
 const commandsDir = new URL("./commands/", import.meta.url);
+const discovered: string[] = [];
 for await (const entry of Deno.readDir(commandsDir)) {
   if (!entry.isFile || !entry.name.endsWith(".ts")) continue;
-  const name = entry.name.slice(0, -3);
-  const mod = await import(new URL(entry.name, commandsDir).href);
+  discovered.push(entry.name.slice(0, -3));
+}
+const ordered = [
+  ...COMMAND_ORDER.filter((n) => discovered.includes(n)),
+  ...discovered.filter((n) => !COMMAND_ORDER.includes(n)).sort(),
+];
+for (const name of ordered) {
+  const mod = await import(new URL(`${name}.ts`, commandsDir).href);
   if (mod.command instanceof Command) {
     main.command(name, mod.command);
   }

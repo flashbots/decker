@@ -177,7 +177,7 @@ export async function runTest(opts: TestOpts): Promise<number> {
 }
 
 export const command = new Command()
-  .description("Send a test transaction to the local EL node")
+  .description("Send a test transaction (default: http://localhost:8545)")
   .option("--rpc <url:string>", "Target RPC URL for sending transactions", {
     default: "http://localhost:8545",
   })

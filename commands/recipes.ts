@@ -3,7 +3,7 @@ import { Command } from "jsr:@cliffy/command@^1.0.0-rc.7";
 const RECIPES_DIR = new URL("../recipes/", import.meta.url);
 
 export const command = new Command()
-  .description("List built-in recipes")
+  .description("List recipes")
   .action(async () => {
     const names: string[] = [];
     for await (const entry of Deno.readDir(RECIPES_DIR)) {

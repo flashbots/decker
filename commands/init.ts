@@ -15,7 +15,7 @@ async function exists(path: string): Promise<boolean> {
 }
 
 export const command = new Command()
-  .description("Clone the decker repo (latest main) into the current directory")
+  .description("Kickstart with the decker repo (latest main) in the current directory")
   .action(async () => {
     const cwd = Deno.cwd();
     console.log(`${dim("→")} cloning ${bold(SOURCE)}${dim(`@${REF}`)} → ${cyan(cwd)}`);

@@ -170,7 +170,7 @@ export async function up(arg?: string): Promise<number> {
 }
 
 export const command = new Command()
-  .description("Build (if needed) and run a recipe via podman kube play")
+  .description("Start a recipe and detach")
   .arguments("[target:string]")
   .action(async (_, target?: string) => {
     const t = await resolveTarget(target);
