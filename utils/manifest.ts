@@ -4,7 +4,7 @@ import { done, fail, step } from "./term.ts";
 export type DeckerProject = {
   decker: {
     source: string;
-    commit: string;
+    ref: string;
     into?: string;
   };
   recipe: string;
@@ -58,6 +58,18 @@ async function head(dir: string): Promise<string> {
   return new TextDecoder().decode(stdout).trim();
 }
 
+async function resolveRef(dir: string, ref: string): Promise<string> {
+  for (const candidate of [ref, `origin/${ref}`]) {
+    const { code, stdout } = await new Deno.Command("git", {
+      args: ["-C", dir, "rev-parse", "--verify", "--quiet", `${candidate}^{commit}`],
+      stdout: "piped",
+      stderr: "piped",
+    }).output();
+    if (code === 0) return new TextDecoder().decode(stdout).trim();
+  }
+  throw new Error(`cannot resolve ref ${ref} in ${dir}`);
+}
+
 async function isDirty(dir: string): Promise<boolean> {
   const { code, stdout } = await new Deno.Command("git", {
     args: ["-C", dir, "status", "--porcelain"],
@@ -68,15 +80,16 @@ async function isDirty(dir: string): Promise<boolean> {
   return new TextDecoder().decode(stdout).trim().length > 0;
 }
 
-async function checkout(dir: string, commit: string): Promise<void> {
+async function checkoutDetached(dir: string, ref: string): Promise<void> {
+  const commit = await resolveRef(dir, ref);
   const { code, stderr } = await new Deno.Command("git", {
-    args: ["-C", dir, "checkout", "--quiet", commit],
+    args: ["-C", dir, "checkout", "--quiet", "--detach", commit],
     stdout: "piped",
     stderr: "piped",
   }).output();
   if (code !== 0) {
     await Deno.stderr.write(stderr);
-    throw new Error(`git checkout ${commit} failed`);
+    throw new Error(`git checkout ${ref} failed`);
   }
 }
 
@@ -94,9 +107,9 @@ async function fetchAll(dir: string): Promise<void> {
 
 export async function pull(p: DeckerProject): Promise<string> {
   const src = p.decker.source;
-  const commit = p.decker.commit;
+  const ref = p.decker.ref;
   if (!src) throw new Error("decker.source required");
-  if (!commit) throw new Error("decker.commit required");
+  if (!ref) throw new Error("decker.ref required");
   const dst = intoDir(p);
 
   if (!await isCloned(p)) {
@@ -112,18 +125,9 @@ export async function pull(p: DeckerProject): Promise<string> {
       throw new Error("clone failed");
     }
     done(sp, dst);
-    const spC = step(`checking out ${commit.slice(0, 12)}`);
-    try {
-      await checkout(dst, commit);
-    } catch (e) {
-      fail(spC, (e as Error).message);
-      throw e;
-    }
-    done(spC);
   } else {
-    if (await head(dst) === commit) return dst;
     if (await isDirty(dst)) {
-      throw new Error(`${dst} has uncommitted changes; refusing to checkout ${commit.slice(0, 12)}`);
+      throw new Error(`${dst} has uncommitted changes; refusing to checkout ${ref}`);
     }
     const spF = step(`fetching in ${dst}`);
     try {
@@ -133,20 +137,16 @@ export async function pull(p: DeckerProject): Promise<string> {
       throw e;
     }
     done(spF);
-    const spC = step(`checking out ${commit.slice(0, 12)}`);
-    try {
-      await checkout(dst, commit);
-    } catch (e) {
-      fail(spC, (e as Error).message);
-      throw e;
-    }
-    done(spC);
   }
 
-  const got = await head(dst);
-  if (got !== commit) {
-    throw new Error(`HEAD ${got.slice(0, 12)} != commit ${commit.slice(0, 12)}`);
+  const spC = step(`checking out ${ref}`);
+  try {
+    await checkoutDetached(dst, ref);
+  } catch (e) {
+    fail(spC, (e as Error).message);
+    throw e;
   }
+  done(spC, (await head(dst)).slice(0, 12));
   return dst;
 }
 
@@ -155,10 +155,11 @@ export async function ensureClone(p: DeckerProject): Promise<string> {
   if (!await isCloned(p)) {
     throw new Error(`${dst} not present — run \`decker pull\` first`);
   }
+  const pinned = await resolveRef(dst, p.decker.ref);
   const got = await head(dst);
-  if (got !== p.decker.commit) {
+  if (got !== pinned) {
     throw new Error(
-      `${dst} at ${got.slice(0, 12)} but manifest pins ${p.decker.commit.slice(0, 12)} — run \`decker pull\``,
+      `${dst} at ${got.slice(0, 12)} but manifest pins ${p.decker.ref} (${pinned.slice(0, 12)}) — run \`decker pull\``,
     );
   }
   return dst;

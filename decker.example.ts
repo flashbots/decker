@@ -6,7 +6,7 @@
 type DeckerProject = {
   decker: {
     source: string;
-    commit: string;
+    ref: string;
     into?: string;
   };
   recipe: string;
@@ -15,7 +15,7 @@ type DeckerProject = {
 export const project: DeckerProject = {
   decker: {
     source: "https://github.com/flashbots/decker.git",
-    commit: "0000000000000000000000000000000000000000",
+    ref: "main", // pin to commit hash
     into: ".decker",
   },
   recipe: "l1",
