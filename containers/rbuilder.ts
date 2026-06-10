@@ -4,6 +4,10 @@ const DEFAULT_HTTP_PORT = 8745;
 
 export const ports = {
   http: { port: DEFAULT_HTTP_PORT, protocol: "TCP" as const, service: false },
+  // Telemetry servers (see rbuilderConfigFor): redacted = http+1, full = http+2.
+  // Declared so observability recipes can `ctx.url(..., "full_telemetry")`.
+  redacted_telemetry: { port: DEFAULT_HTTP_PORT + 1, protocol: "TCP" as const, service: false },
+  full_telemetry: { port: DEFAULT_HTTP_PORT + 2, protocol: "TCP" as const, service: false },
 };
 
 const rbuilderConfigFor = (
