@@ -73,6 +73,7 @@ function summary(_paths: RendererPaths): Array<[string, string]> {
 export const renderer: Renderer = {
   name: "podman",
   slot: "pods",
+  imageEngine: "podman",
   render: build,
   start,
   stop,

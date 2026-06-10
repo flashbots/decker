@@ -1,4 +1,4 @@
-import type { ImageBuildSpec } from "./types.ts";
+import type { ImageBuildSpec, ImageEngine } from "./types.ts";
 
 const DECKER_ROOT = new URL("../", import.meta.url).pathname.replace(/\/$/, "");
 const CACHE_DIR = `${DECKER_ROOT}/cache/images`;
@@ -16,9 +16,10 @@ function slug(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
-async function imageExists(tag: string): Promise<boolean> {
-  const proc = await new Deno.Command("podman", {
-    args: ["image", "exists", tag],
+async function imageExists(tag: string, engine: ImageEngine): Promise<boolean> {
+  const args = engine === "podman" ? ["image", "exists", tag] : ["image", "inspect", tag];
+  const proc = await new Deno.Command(engine, {
+    args,
     stdout: "null",
     stderr: "null",
   }).output();
@@ -59,22 +60,25 @@ async function ensureClone(spec: ImageBuildSpec): Promise<string> {
   return cloneDir;
 }
 
-async function buildOne(tag: string, spec: ImageBuildSpec): Promise<void> {
+async function buildOne(tag: string, spec: ImageBuildSpec, engine: ImageEngine): Promise<void> {
   const cloneDir = await ensureClone(spec);
   await run(["sh", "-c", spec.cmd], {
     cwd: cloneDir,
-    env: { ...Deno.env.toObject(), IMAGE: tag },
+    env: { ...Deno.env.toObject(), IMAGE: tag, ENGINE: engine },
   });
-  if (!(await imageExists(tag))) {
+  if (!(await imageExists(tag, engine))) {
     throw new Error(`build for ${tag} ran but image is not present afterward`);
   }
 }
 
-export async function ensureImages(specs: Map<string, ImageBuildSpec>): Promise<string[]> {
+export async function ensureImages(
+  specs: Map<string, ImageBuildSpec>,
+  engine: ImageEngine,
+): Promise<string[]> {
   const built: string[] = [];
   for (const [tag, spec] of specs) {
-    if (await imageExists(tag)) continue;
-    await buildOne(tag, spec);
+    if (await imageExists(tag, engine)) continue;
+    await buildOne(tag, spec, engine);
     built.push(tag);
   }
   return built;

@@ -10,6 +10,10 @@ type DeckerProject = {
     into?: string;
   };
   recipe: string;
+  target?: {
+    pods?: string;
+    processes?: string;
+  };
 };
 
 export const project: DeckerProject = {
@@ -19,4 +23,10 @@ export const project: DeckerProject = {
     into: ".decker",
   },
   recipe: "l1",
+  // Override the recipe's renderer targets. Default for pods is "podman";
+  // switch to "docker-compose" to run on Docker instead.
+  // target: {
+  //   pods: "docker-compose",
+  //   processes: "host",
+  // },
 };

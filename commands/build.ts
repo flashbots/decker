@@ -1,6 +1,6 @@
 import { Command } from "jsr:@cliffy/command@^1.0.0-rc.7";
-import { buildOne, missingBinaries } from "../utils/build.ts";
-import { done, step, warn } from "../utils/term.ts";
+import { buildOne, generateArtifacts, loadRecipe, missingBinaries } from "../utils/build.ts";
+import { done, fail, step, warn } from "../utils/term.ts";
 
 const RECIPES_DIR = new URL("../recipes/", import.meta.url);
 
@@ -18,6 +18,15 @@ export const command = new Command()
   .action(async (_, ...recipes: string[]) => {
     const targets = recipes.length === 0 ? await listRecipes() : recipes;
     for (const r of targets) {
+      const { recipe } = await loadRecipe(r);
+      const sArt = step(`generating artifacts for ${r}`);
+      try {
+        await generateArtifacts(recipe);
+      } catch (e) {
+        fail(sArt, (e as Error).message);
+        Deno.exit(1);
+      }
+      done(sArt, `${recipe.artifacts.generator}/${recipe.artifacts.fork}`);
       const sp = step(`rendering ${r}`);
       const { name, binaries } = await buildOne(r);
       done(sp, `manifests/${name}/`);

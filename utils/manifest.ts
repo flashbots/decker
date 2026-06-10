@@ -8,6 +8,10 @@ export type DeckerProject = {
     into?: string;
   };
   recipe: string;
+  target?: {
+    pods?: string;
+    processes?: string;
+  };
 };
 
 export type Manifest = {

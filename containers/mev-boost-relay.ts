@@ -3,7 +3,7 @@ import type { Container, ContainerDef, ContainerResult, Ctx, ImageBuildSpec } fr
 const IMAGE: ImageBuildSpec = {
   repo: "https://github.com/flashbots/mev-boost-relay",
   ref: "caner/devnet-cold-starts",
-  cmd: "podman build -t $IMAGE .",
+  cmd: "$ENGINE build -t $IMAGE .",
 };
 const BLS_KEYS_FIXTURE = new URL("../generators/l1/bls_keys.json", import.meta.url);
 const DEFAULT_API_PORT = 9062;

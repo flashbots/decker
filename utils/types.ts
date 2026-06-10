@@ -37,6 +37,8 @@ export type ImageBuildSpec = {
   cmd: string;
 };
 
+export type ImageEngine = "podman" | "docker";
+
 export type Container = {
   image: string | ImageBuildSpec;
   command?: string[];
@@ -169,6 +171,7 @@ export type RendererPaths = {
 export type Renderer = {
   name: string;
   slot: RendererSlot;
+  imageEngine?: ImageEngine;
   render(recipe: Recipe, ctx: RenderCtx): RenderResult;
   start?(paths: RendererPaths): Promise<number>;
   stop?(runtimeDir: string): Promise<number>;

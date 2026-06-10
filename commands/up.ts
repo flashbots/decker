@@ -5,7 +5,7 @@ import { emit } from "../utils/emit.ts";
 import { ensureImages } from "../utils/image-build.ts";
 import { DEFAULT_MANIFEST, ensureClone, loadManifest } from "../utils/manifest.ts";
 import { dim, done, fail, note, red, rule, step, summary } from "../utils/term.ts";
-import type { ImageBuildSpec, Recipe, Renderer, RendererPaths } from "../utils/types.ts";
+import type { ImageBuildSpec, ImageEngine, Recipe, Renderer, RendererPaths } from "../utils/types.ts";
 
 const DECKER_ROOT = new URL("../", import.meta.url).pathname.replace(/\/$/, "");
 const RUNTIME_DIR = `${DECKER_ROOT}/runtime`;
@@ -37,11 +37,28 @@ export function printSummary(renderers: Renderer[], paths: RendererPaths) {
   summary(entries);
 }
 
+export type TargetOverride = { pods?: string; processes?: string };
+
+function applyTargetOverride(recipe: Recipe, override?: TargetOverride): Recipe {
+  if (!override || (!override.pods && !override.processes)) return recipe;
+  return {
+    ...recipe,
+    target: {
+      ...recipe.target,
+      ...(override.pods ? { pods: override.pods } : {}),
+      ...(override.processes ? { processes: override.processes } : {}),
+    },
+  };
+}
+
 export async function runManifest(sub: "up" | "start", manifestPath: string): Promise<number> {
   const m = await loadManifest(manifestPath);
   const into = await ensureClone(m.project);
+  const extra: string[] = [];
+  if (m.project.target?.pods) extra.push("--pods", m.project.target.pods);
+  if (m.project.target?.processes) extra.push("--processes", m.project.target.processes);
   const proc = new Deno.Command("deno", {
-    args: ["run", "-A", `${into}/cli.ts`, sub, m.project.recipe],
+    args: ["run", "-A", `${into}/cli.ts`, sub, ...extra, m.project.recipe],
     stdin: "inherit",
     stdout: "inherit",
     stderr: "inherit",
@@ -56,7 +73,7 @@ export type UpOutcome = {
   paths: RendererPaths;
 };
 
-export async function upTarget(target: string): Promise<UpOutcome> {
+export async function upTarget(target: string, override?: TargetOverride): Promise<UpOutcome> {
   let loadedRecipe: Recipe | null = null;
   let renderers: Renderer[] = [];
   let paths: RendererPaths = { runtimeDir: RUNTIME_DIR, manifestDir: "" };
@@ -65,7 +82,8 @@ export async function upTarget(target: string): Promise<UpOutcome> {
   if (target.endsWith(".yaml")) {
     paths = { runtimeDir: RUNTIME_DIR, manifestDir: "" };
   } else {
-    const { name, recipe } = await loadRecipe(target);
+    const { name, recipe: loaded } = await loadRecipe(target);
+    const recipe = applyTargetOverride(loaded, override);
     loadedRecipe = recipe;
 
     rule(name);
@@ -100,8 +118,9 @@ export async function upTarget(target: string): Promise<UpOutcome> {
   if (imageBuilds.size > 0) {
     rule("images");
     const t = performance.now();
+    const engine: ImageEngine = renderers.find((r) => r.slot === "pods")?.imageEngine ?? "podman";
     try {
-      const built = await ensureImages(imageBuilds);
+      const built = await ensureImages(imageBuilds, engine);
       const skipped = imageBuilds.size - built.length;
       const extra = built.length > 0
         ? `built ${built.length}${skipped > 0 ? `, cached ${skipped}` : ""}`
@@ -157,21 +176,24 @@ export async function upTarget(target: string): Promise<UpOutcome> {
   return { code: 0, renderers, paths };
 }
 
-export async function up(arg?: string): Promise<number> {
+export async function up(arg?: string, override?: TargetOverride): Promise<number> {
   const t = await resolveTarget(arg);
   if (t.kind === "manifest") return await runManifest("up", t.path);
-  return (await upTarget(t.kind === "recipe" ? t.target : t.path)).code;
+  return (await upTarget(t.kind === "recipe" ? t.target : t.path, override)).code;
 }
 
 export const command = new Command()
   .description("Start a recipe and detach")
+  .option("--pods <renderer:string>", "Override recipe target for pods")
+  .option("--processes <renderer:string>", "Override recipe target for processes")
   .arguments("[target:string]")
-  .action(async (_, target?: string) => {
+  .action(async (opts, target?: string) => {
+    const override: TargetOverride = { pods: opts.pods, processes: opts.processes };
     const t = await resolveTarget(target);
     if (t.kind === "manifest") {
       Deno.exit(await runManifest("up", t.path));
     }
-    const out = await upTarget(t.kind === "recipe" ? t.target : t.path);
+    const out = await upTarget(t.kind === "recipe" ? t.target : t.path, override);
     if (out.code === 0) printSummary(out.renderers, out.paths);
     Deno.exit(out.code);
   });

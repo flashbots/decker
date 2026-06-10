@@ -4,7 +4,7 @@ import { lookup } from "../utils/resolve.ts";
 import { portNum } from "../utils/types.ts";
 import { accent, bold, dim, muted, rule, warn } from "../utils/term.ts";
 import { down } from "./down.ts";
-import { printSummary, resolveTarget, runManifest, type UpOutcome, upTarget } from "./up.ts";
+import { printSummary, resolveTarget, runManifest, type TargetOverride, type UpOutcome, upTarget } from "./up.ts";
 
 async function advertise(target: string, out: UpOutcome) {
   const { recipe } = await loadRecipe(target);
@@ -28,8 +28,11 @@ async function advertise(target: string, out: UpOutcome) {
 
 export const command = new Command()
   .description("Start and attach to a recipe (take down with Ctrl+C)")
+  .option("--pods <renderer:string>", "Override recipe target for pods")
+  .option("--processes <renderer:string>", "Override recipe target for processes")
   .arguments("[target:string]")
-  .action(async (_, target?: string) => {
+  .action(async (opts, target?: string) => {
+    const override: TargetOverride = { pods: opts.pods, processes: opts.processes };
     const t = await resolveTarget(target);
     if (t.kind === "manifest") {
       const noop = () => {};
@@ -38,7 +41,7 @@ export const command = new Command()
       Deno.exit(await runManifest("start", t.path));
     }
 
-    const out = await upTarget(t.kind === "recipe" ? t.target : t.path);
+    const out = await upTarget(t.kind === "recipe" ? t.target : t.path, override);
     if (out.code !== 0) Deno.exit(out.code);
     if (t.kind === "recipe") await advertise(t.target, out);
 
