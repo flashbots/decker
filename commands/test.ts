@@ -87,6 +87,14 @@ async function getBlockExtraData(c: RpcClient, blockNumberHex: string): Promise<
   return block?.extraData ?? "0x";
 }
 
+function tryUtf8(hex: string): string {
+  try {
+    return toUtf8String(getBytes(hex));
+  } catch {
+    return hex;
+  }
+}
+
 export type TestOpts = {
   rpc: string;
   elRpc: string;
@@ -155,7 +163,7 @@ export async function runTest(opts: TestOpts): Promise<number> {
       console.log(`  ${dim("Status:")}       ${accent(String(status))}`);
 
       const extraHex = await getBlockExtraData(el, receipt.blockNumber);
-      const extraStr = toUtf8String(getBytes(extraHex));
+      const extraStr = tryUtf8(extraHex);
       console.log(`  ${dim("Extra Data:")}   ${accent(extraStr)}`);
 
       if (opts.expectedExtraData !== undefined && opts.expectedExtraData !== "") {
