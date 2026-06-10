@@ -77,7 +77,7 @@ export function rule(title?: string) {
 export type Spinner = {
   label: string;
   t0: number;
-  timer: number | null;
+  timer: ReturnType<typeof setInterval> | null;
   frame: number;
 };
 
