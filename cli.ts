@@ -1,19 +1,47 @@
 import { Command } from "jsr:@cliffy/command@^1.0.0-rc.7";
 import { fromFileUrl } from "jsr:@std/path@^1.0.0";
-import { accent, bold, dim, muted } from "./utils/term.ts";
+import { accent, bold, dim, muted, red } from "./utils/term.ts";
 
 const me = await Deno.realPath(fromFileUrl(import.meta.url));
-let local: string | null = null;
-try {
-  local = await Deno.realPath(`${Deno.cwd()}/cli.ts`);
-} catch { /* none */ }
 
-if (local && local !== me) {
+async function realPathOrNull(p: string): Promise<string | null> {
+  try {
+    return await Deno.realPath(p);
+  } catch {
+    return null;
+  }
+}
+
+const CARVE_OUT = new Set(["init", "spit", "pull", "help", "--help", "-h"]);
+const first = Deno.args[0];
+const noArgs = Deno.args.length === 0;
+const carved = noArgs || (first !== undefined && CARVE_OUT.has(first));
+
+async function reexec(path: string): Promise<never> {
   const proc = new Deno.Command("deno", {
-    args: ["run", "-A", local, ...Deno.args],
+    args: ["run", "-A", path, ...Deno.args],
+    stdin: "inherit",
+    stdout: "inherit",
+    stderr: "inherit",
   }).spawn();
   const { code } = await proc.status;
   Deno.exit(code);
+}
+
+if (!carved) {
+  const local = await realPathOrNull(`${Deno.cwd()}/cli.ts`);
+  if (local && local !== me) await reexec(local);
+  if (!local) {
+    const manifest = await realPathOrNull(`${Deno.cwd()}/decker.ts`);
+    if (manifest) {
+      const forked = await realPathOrNull(`${Deno.cwd()}/.decker/cli.ts`);
+      if (!forked) {
+        console.error(red("✗ decker.ts present but .decker/ missing — run `decker pull`"));
+        Deno.exit(1);
+      }
+      if (forked !== me) await reexec(forked);
+    }
+  }
 }
 
 const VERSION = "0.1.0";
@@ -25,6 +53,7 @@ const main = new Command()
 const COMMAND_ORDER = [
   "init",
   "spit",
+  "pull",
   "recipes",
   "start",
   "up",

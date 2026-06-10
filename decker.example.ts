@@ -1,12 +1,12 @@
 // A standalone decker manifest.
 //
 // Copy this to decker.ts (or `decker spit`) and tweak.
-// Then run `decker up` or `decker start` from this directory.
+// Then run `decker pull` to clone+pin, followed by `decker start` or `decker up`.
 
 type DeckerProject = {
   decker: {
-    source?: string;
-    ref?: string;
+    source: string;
+    commit: string;
     into?: string;
   };
   recipe: string;
@@ -15,7 +15,7 @@ type DeckerProject = {
 export const project: DeckerProject = {
   decker: {
     source: "https://github.com/flashbots/decker.git",
-    ref: "main",
+    commit: "0000000000000000000000000000000000000000",
     into: ".decker",
   },
   recipe: "l1",

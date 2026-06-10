@@ -3,8 +3,8 @@ import { done, fail, step } from "./term.ts";
 
 export type DeckerProject = {
   decker: {
-    source?: string;
-    ref?: string;
+    source: string;
+    commit: string;
     into?: string;
   };
   recipe: string;
@@ -48,26 +48,118 @@ export async function isCloned(p: DeckerProject): Promise<boolean> {
   return await exists(join(intoDir(p), "cli.ts"));
 }
 
-export async function clone(p: DeckerProject): Promise<void> {
-  const src = p.decker.source;
-  if (!src) throw new Error("decker.source required to clone");
-  const ref = p.decker.ref ?? "main";
-  const dst = intoDir(p);
-  const sp = step(`cloning ${src}@${ref}`);
+async function head(dir: string): Promise<string> {
+  const { code, stdout } = await new Deno.Command("git", {
+    args: ["-C", dir, "rev-parse", "HEAD"],
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+  if (code !== 0) throw new Error(`git rev-parse failed in ${dir}`);
+  return new TextDecoder().decode(stdout).trim();
+}
+
+async function isDirty(dir: string): Promise<boolean> {
+  const { code, stdout } = await new Deno.Command("git", {
+    args: ["-C", dir, "status", "--porcelain"],
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+  if (code !== 0) throw new Error(`git status failed in ${dir}`);
+  return new TextDecoder().decode(stdout).trim().length > 0;
+}
+
+async function checkout(dir: string, commit: string): Promise<void> {
   const { code, stderr } = await new Deno.Command("git", {
-    args: ["clone", "--quiet", "--depth", "1", "--branch", ref, src, dst],
+    args: ["-C", dir, "checkout", "--quiet", commit],
     stdout: "piped",
     stderr: "piped",
   }).output();
   if (code !== 0) {
-    fail(sp, "git clone failed");
     await Deno.stderr.write(stderr);
-    throw new Error("clone failed");
+    throw new Error(`git checkout ${commit} failed`);
   }
-  done(sp, dst);
+}
+
+async function fetchAll(dir: string): Promise<void> {
+  const { code, stderr } = await new Deno.Command("git", {
+    args: ["-C", dir, "fetch", "--quiet", "--all", "--tags"],
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+  if (code !== 0) {
+    await Deno.stderr.write(stderr);
+    throw new Error("git fetch failed");
+  }
+}
+
+export async function pull(p: DeckerProject): Promise<string> {
+  const src = p.decker.source;
+  const commit = p.decker.commit;
+  if (!src) throw new Error("decker.source required");
+  if (!commit) throw new Error("decker.commit required");
+  const dst = intoDir(p);
+
+  if (!await isCloned(p)) {
+    const sp = step(`cloning ${src}`);
+    const { code, stderr } = await new Deno.Command("git", {
+      args: ["clone", "--quiet", src, dst],
+      stdout: "piped",
+      stderr: "piped",
+    }).output();
+    if (code !== 0) {
+      fail(sp, "git clone failed");
+      await Deno.stderr.write(stderr);
+      throw new Error("clone failed");
+    }
+    done(sp, dst);
+    const spC = step(`checking out ${commit.slice(0, 12)}`);
+    try {
+      await checkout(dst, commit);
+    } catch (e) {
+      fail(spC, (e as Error).message);
+      throw e;
+    }
+    done(spC);
+  } else {
+    if (await head(dst) === commit) return dst;
+    if (await isDirty(dst)) {
+      throw new Error(`${dst} has uncommitted changes; refusing to checkout ${commit.slice(0, 12)}`);
+    }
+    const spF = step(`fetching in ${dst}`);
+    try {
+      await fetchAll(dst);
+    } catch (e) {
+      fail(spF, (e as Error).message);
+      throw e;
+    }
+    done(spF);
+    const spC = step(`checking out ${commit.slice(0, 12)}`);
+    try {
+      await checkout(dst, commit);
+    } catch (e) {
+      fail(spC, (e as Error).message);
+      throw e;
+    }
+    done(spC);
+  }
+
+  const got = await head(dst);
+  if (got !== commit) {
+    throw new Error(`HEAD ${got.slice(0, 12)} != commit ${commit.slice(0, 12)}`);
+  }
+  return dst;
 }
 
 export async function ensureClone(p: DeckerProject): Promise<string> {
-  if (!await isCloned(p)) await clone(p);
-  return intoDir(p);
+  const dst = intoDir(p);
+  if (!await isCloned(p)) {
+    throw new Error(`${dst} not present — run \`decker pull\` first`);
+  }
+  const got = await head(dst);
+  if (got !== p.decker.commit) {
+    throw new Error(
+      `${dst} at ${got.slice(0, 12)} but manifest pins ${p.decker.commit.slice(0, 12)} — run \`decker pull\``,
+    );
+  }
+  return dst;
 }
