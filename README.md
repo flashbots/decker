@@ -20,13 +20,23 @@ Ethereum L1/L2 devnet creation is the main focus area but you can use it for any
 
 ## Quickstart
 
-Install Deno and podman first (remember to extend the PATH variable to support `deno install` outputs).
+Install podman first.
 
-Clone this repo and run
+On Linux and macOS, install the latest `decker` binary to `/usr/local/bin` with:
+```sh
+curl -sSfL https://raw.githubusercontent.com/flashbots/decker/main/install.sh | bash
+```
+
+To pin a specific release, set `VERSION`:
+```sh
+VERSION=v0.1.0 curl -sSfL https://raw.githubusercontent.com/flashbots/decker/main/install.sh | bash
+```
+
+Or, for development, install Deno and run from a clone of this repo:
 ```sh
 just install
 ```
-or
+which is equivalent to
 ```sh
 deno install -gAf -n decker cli.ts
 ```
@@ -84,11 +94,11 @@ We eliminate this friction by inverting the approach:
 
 ## Roadmap
 
-- [ ] Installation script
+- [x] Installation script
 - [ ] More recipes (e.g. opstack)
 - [ ] Observability tools
-- [ ] Support host binaries
-- [ ] Custom configuration steps
-- [ ] Standalone decker.ts file for projects
+- [x] Support host binaries
+- [x] Custom configuration steps (scripts)
+- [x] Standalone decker.ts file for projects
 - [ ] Feature documentation
 - [ ] Experiment/alternatives documentation
