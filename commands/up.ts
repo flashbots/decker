@@ -73,7 +73,11 @@ export type UpOutcome = {
   paths: RendererPaths;
 };
 
-export async function upTarget(target: string, override?: TargetOverride): Promise<UpOutcome> {
+export async function upTarget(
+  target: string,
+  override?: TargetOverride,
+  opts: { attached?: boolean } = {},
+): Promise<UpOutcome> {
   let loadedRecipe: Recipe | null = null;
   let renderers: Renderer[] = [];
   let paths: RendererPaths = { runtimeDir: RUNTIME_DIR, manifestDir: "" };
@@ -88,17 +92,19 @@ export async function upTarget(target: string, override?: TargetOverride): Promi
 
     rule(name);
 
-    const sArt = step("generating artifacts");
-    try {
-      await generateArtifacts(recipe);
-    } catch (e) {
-      fail(sArt, (e as Error).message);
-      return { code: 1, renderers, paths };
+    if (recipe.artifacts) {
+      const sArt = step("generating artifacts");
+      try {
+        await generateArtifacts(recipe);
+      } catch (e) {
+        fail(sArt, (e as Error).message);
+        return { code: 1, renderers, paths };
+      }
+      done(sArt, `${recipe.artifacts.generator}/${recipe.artifacts.fork}`);
     }
-    done(sArt, `${recipe.artifacts.generator}/${recipe.artifacts.fork}`);
 
     const sEmit = step("rendering manifests");
-    const emitted = await emit(name, recipe);
+    const emitted = await emit(name, recipe, { attached: opts.attached });
     imageBuilds = emitted.imageBuilds;
     renderers = emitted.selected;
     paths = emitted.paths;
@@ -176,10 +182,14 @@ export async function upTarget(target: string, override?: TargetOverride): Promi
   return { code: 0, renderers, paths };
 }
 
-export async function up(arg?: string, override?: TargetOverride): Promise<number> {
+export async function up(
+  arg?: string,
+  override?: TargetOverride,
+  opts: { attached?: boolean } = {},
+): Promise<number> {
   const t = await resolveTarget(arg);
   if (t.kind === "manifest") return await runManifest("up", t.path);
-  return (await upTarget(t.kind === "recipe" ? t.target : t.path, override)).code;
+  return (await upTarget(t.kind === "recipe" ? t.target : t.path, override, opts)).code;
 }
 
 export const command = new Command()

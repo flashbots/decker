@@ -15,5 +15,5 @@ export const command = new Command()
       fail(sp, (e as Error).message);
       Deno.exit(1);
     }
-    done(sp, `${recipe.artifacts.generator}/${recipe.artifacts.fork} → ${out}`);
+    done(sp, recipe.artifacts ? `${recipe.artifacts.generator}/${recipe.artifacts.fork} → ${out}` : "no artifacts");
   });

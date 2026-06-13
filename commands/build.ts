@@ -26,7 +26,7 @@ export const command = new Command()
         fail(sArt, (e as Error).message);
         Deno.exit(1);
       }
-      done(sArt, `${recipe.artifacts.generator}/${recipe.artifacts.fork}`);
+      done(sArt, recipe.artifacts ? `${recipe.artifacts.generator}/${recipe.artifacts.fork}` : "no artifacts");
       const sp = step(`rendering ${r}`);
       const { name, binaries } = await buildOne(r);
       done(sp, `manifests/${name}/`);

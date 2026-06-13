@@ -33,12 +33,16 @@ export type EmitResult = {
   paths: RendererPaths;
 };
 
-export async function emit(name: string, recipe: Recipe): Promise<EmitResult> {
+export async function emit(
+  name: string,
+  recipe: Recipe,
+  opts: { attached?: boolean } = {},
+): Promise<EmitResult> {
   validate(recipe);
   recipe = resolve(recipe);
   const manifestDir = `${DECKER_ROOT}/manifests/${name}`;
   const runtimeDir = `${DECKER_ROOT}/runtime`;
-  const ctx = { manifestRoot: `\${DECKER_ROOT}/runtime` };
+  const ctx = { manifestRoot: `\${DECKER_ROOT}/runtime`, attached: opts.attached };
 
   const selected: Renderer[] = [rendererFor("pods", recipe.target?.pods)];
   if ((recipe.processes ?? []).length > 0) {

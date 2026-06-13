@@ -27,6 +27,7 @@ export function artifactsHostPath(recipe: Recipe): string {
 }
 
 export async function generateArtifacts(recipe: Recipe): Promise<void> {
+  if (!recipe.artifacts) return;
   const out = artifactsHostPath(recipe);
   const { generator, ...spec } = recipe.artifacts;
   try {

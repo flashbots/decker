@@ -114,7 +114,7 @@ export type ArtifactsSpec = L1ArtifactsSpec;
 export type Script = (recipe: Recipe) => Promise<void> | void;
 
 export type Recipe = {
-  artifacts: ArtifactsSpec;
+  artifacts?: ArtifactsSpec;
   artifactsHostPath?: string;
   target?: {
     pods?: string;
@@ -150,6 +150,9 @@ export type RendererSlot = "pods" | "processes";
 
 export type RenderCtx = {
   manifestRoot: string;
+  // An attached sibling run: renderers skip session singletons (dozzle) the
+  // primary run already provides.
+  attached?: boolean;
 };
 
 export type RenderedFile = {

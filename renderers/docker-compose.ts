@@ -19,7 +19,7 @@ export const DOZZLE_PORT = 18080;
 
 const yamlOpts = { lineWidth: -1, useAnchors: false, skipInvalid: false } as const;
 
-function build(recipe: Recipe, _ctx: RenderCtx): RenderResult {
+function build(recipe: Recipe, renderCtx: RenderCtx): RenderResult {
   const ctx = makeCtx(recipe, (loc) => {
     if (loc.kind === "process") return "host.docker.internal";
     return loc.pod.name;
@@ -33,13 +33,15 @@ function build(recipe: Recipe, _ctx: RenderCtx): RenderResult {
     addPod(pod, recipe, ctx, imageBuilds, services, volumes, files);
   }
 
-  services["dozzle"] = {
-    image: "docker.io/amir20/dozzle:latest",
-    container_name: "dozzle",
-    restart: "on-failure",
-    ports: [`${DOZZLE_PORT}:8080`],
-    volumes: ["/var/run/docker.sock:/var/run/docker.sock:ro"],
-  };
+  if (!renderCtx.attached) {
+    services["dozzle"] = {
+      image: "docker.io/amir20/dozzle:latest",
+      container_name: "dozzle",
+      restart: "on-failure",
+      ports: [`${DOZZLE_PORT}:8080`],
+      volumes: ["/var/run/docker.sock:/var/run/docker.sock:ro"],
+    };
+  }
 
   const doc: Record<string, unknown> = { services };
   if (Object.keys(volumes).length > 0) doc.volumes = volumes;

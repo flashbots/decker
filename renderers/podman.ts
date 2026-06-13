@@ -21,7 +21,7 @@ export const DOZZLE_PORT = 18080;
 
 const yamlOpts = { lineWidth: -1, useAnchors: false, skipInvalid: false } as const;
 
-function build(recipe: Recipe, _ctx: RenderCtx): RenderResult {
+function build(recipe: Recipe, renderCtx: RenderCtx): RenderResult {
   const ctx = makeCtx(recipe, (loc) => hostFor(loc));
   const imageBuilds = new Map<string, ImageBuildSpec>();
   const docs: unknown[] = [];
@@ -29,7 +29,7 @@ function build(recipe: Recipe, _ctx: RenderCtx): RenderResult {
     const { configMaps, pod: podDoc } = podDocs(pod, recipe, ctx, imageBuilds);
     docs.push(...configMaps, podDoc);
   }
-  docs.push(dozzlePod());
+  if (!renderCtx.attached) docs.push(dozzlePod());
   const content = docs.map((d) => stringify(d, yamlOpts)).join("---\n");
   return {
     files: [{ relPath: "podman.yaml", content }],
