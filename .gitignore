@@ -2,6 +2,7 @@
 .claude
 node_modules
 
+manifests/
 runtime/
 bin/
 cache/
