@@ -1,26 +1,27 @@
-> [!WARNING]
-> New tool - work in progress!
-
-# decker
+<p align="center">
+  <img src="_assets/decker.png" alt="Decker" width="300">
+</p>
 
 _Deck your own devnet_
 
-Decker lets you kickstart and vibecode any dev setup with complete freedom — powered by Deno, TypeScript and agent-first patterns
+Decker lets you kickstart and vibecode any dev setup with complete freedom — powered by Deno, TypeScript and agent-first patterns!
 
-- **Containers:** k8s-like blueprints
-- **Recipes:** compose containers into pods
-- **CLI:** build and run any recipe you want
-- **Manifests:** work directly on prebuilt recipes
-- **Orchestration:** podman and k8s (and more)
-- **Observability:** any community tool
+- **Generators:** Generate your own artifacts/configs dynamically
+- **Containers:** Write k8s-like blueprints or host processes
+- **Recipes:** Compose containers/processes into a single run
+- **Scripts:** Control recipe pre/post states and even launch child recipes
+- **Renderers:** Run your recipe on any target (podman, docker, process-compose and anything you want)
+- **CLI:** Hack on the clone, run immediately with preinstalled binary
 
 Rapidly vibehack your own containers and recipes, manipulate commands, plug in any tool you want! ⚡
 
-Ethereum L1/L2 devnet creation is the main focus area but you can use it for anything.
+Own your recipes and features on your fork/revision and run from a `decker.ts` file in your developed project!
+
+Built from the lessons of [builder-playground](https://github.com/flashbots/builder-playground) to spin up Ethereum devnets - but of course, you can compose any dev setup with it!
 
 ## Quickstart
 
-Install podman first.
+Install podman first. If you prefer docker, you can modify recipe targets or override with `--pods docker` flag.
 
 On Linux and macOS, install the latest `decker` binary to `/usr/local/bin` with:
 ```sh
@@ -32,73 +33,65 @@ To pin a specific release, set `VERSION`:
 VERSION=v0.1.0 curl -sSfL https://raw.githubusercontent.com/flashbots/decker/main/install.sh | bash
 ```
 
-Or, for development, install Deno and run from a clone of this repo:
-```sh
-just install
-```
-which is equivalent to
-```sh
-deno install -gAf -n decker cli.ts
-```
-
 Start the L1 recipe:
 ```sh
 decker start l1
 ```
 
-and bam! You have a working devnet.
+And you get:
 
 ```
-✓ artifacts generated (l1, 740ms)
-✓ rendered l1 (15ms)
-✓ started 5 pods (3.2s)
-
   el-1
     rpc        8545
     authrpc    8551
     metrics    9090
-
   beacon-1
     http       3500
     p2p-tcp    9000
     p2p-udp    9000
     quic       9100
-
   validator-1  (no ports)
-
+  pg-mb-1
+    postgres   5432
+  redis-mb-1
+    redis      6379
+  housekeeper-mb-1  (no ports)
   mev-boost-relay-1
-    http       5555
+    http       9062
 
-  Dozzle  http://localhost:18080
+  Pod logs (Dozzle)  http://localhost:18080
 
-  ─ Ctrl+C to stop ─
+  Ctrl+C to stop
 ```
 
-Next up, try the rbuilder recipe and ask your agent to add new nodes! 🤖
+Do a `decker test` and you'll get a block built.
 
-**TBD:** Standalone `decker.ts` file for projects!
+## Integration
 
-## Background
+1. Fork/clone this repo or do `decker init` on an empty dir.
 
-Sophisticated tools and their abstraction layers speed up humans but slow down LLM problem solving and reduce success. And developers often try to fix tools to satisfy their own use-case specific necessities.
+2. Tell your agent to add containers/recipes/features.
 
-We eliminate this friction by inverting the approach:
+3. Commit and push to your fork.
+
+4. Go to your developed/tested project, do `decker spit`.
+
+5. Modify the decker file to point to your fork revision hash and recipe.
+
+That's it! And you have dev setup of your own suitable for local runs and CI, with `decker start` or `decker up` + `decker down`.
+
+You can run any public recipe (and accessible private recipes) like this.
+
+## Why?
+
+Sophisticated tools and their abstraction layers speed up humans but slow down LLM problem solving capabilities and reduce success. In addition, developers often try to fix upstream the tools they depend on, to satisfy their own use-case specific necessities.
+
+We eliminate this friction by inverting the approach to an inclusive one:
 
 - Simple building blocks and scalable patterns for LLM agents and humans
 
-- Relying on LLM training data instead of heavy custom logic and abstractions
+- Relying more on LLM training data instead of heavy custom logic and abstractions
 
-- Putting users in control of features instead of restricting to a limited selection
+- Putting users in control of features instead of restricting to an opinionated and limited selection
 
-- Leveraging readily available community tools 
-
-## Roadmap
-
-- [x] Installation script
-- [ ] More recipes (e.g. opstack)
-- [ ] Observability tools
-- [x] Support host binaries
-- [x] Custom configuration steps (scripts)
-- [x] Standalone decker.ts file for projects
-- [ ] Feature documentation
-- [ ] Experiment/alternatives documentation
+- Leveraging readily available community tools
