@@ -2,6 +2,13 @@
   <img src="_assets/decker.png" alt="Decker" width="300">
 </p>
 
+<p align="center">
+  <a href="https://github.com/flashbots/decker/actions/workflows/ci.yml"><img src="https://github.com/flashbots/decker/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/flashbots/decker/releases"><img src="https://img.shields.io/github/v/release/flashbots/decker?logo=github" alt="Release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/flashbots/decker" alt="License: MIT"></a>
+  <a href="https://deno.com"><img src="https://img.shields.io/badge/Deno-2-blue?logo=deno&logoColor=white" alt="Deno"></a>
+</p>
+
 _Deck your own devnet_
 
 Decker lets you kickstart and vibecode any dev setup with complete freedom — powered by Deno, TypeScript and agent-first patterns!

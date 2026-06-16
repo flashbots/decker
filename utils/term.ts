@@ -49,6 +49,7 @@ function consoleWidth(): number {
   }
 }
 
+// deno-lint-ignore no-control-regex -- ESC is intentional: strips ANSI color codes
 const ANSI_RE = /\x1b\[[0-9;]*m/g;
 function visibleLen(s: string): number {
   return s.replace(ANSI_RE, "").length;
