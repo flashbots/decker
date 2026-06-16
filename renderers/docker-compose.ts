@@ -19,9 +19,11 @@ export const DOZZLE_PORT = 18080;
 
 const yamlOpts = { lineWidth: -1, useAnchors: false, skipInvalid: false } as const;
 
+const HOST_GATEWAY = "host.docker.internal";
+
 function build(recipe: Recipe, renderCtx: RenderCtx): RenderResult {
   const ctx = makeCtx(recipe, (loc) => {
-    if (loc.kind === "process") return "host.docker.internal";
+    if (loc.kind === "process") return HOST_GATEWAY;
     return loc.pod.name;
   });
   const imageBuilds = new Map<string, ImageBuildSpec>();
@@ -111,6 +113,7 @@ export const renderer: Renderer = {
   name: "docker-compose",
   slot: "pods",
   imageEngine: "docker",
+  hostGateway: HOST_GATEWAY,
   render: build,
   start,
   stop,

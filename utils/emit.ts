@@ -3,6 +3,7 @@ import { rendererFor } from "./renderers.ts";
 import type { ImageBuildSpec, Recipe, Renderer, RendererPaths } from "./types.ts";
 
 const DECKER_ROOT = new URL("../", import.meta.url).pathname.replace(/\/$/, "");
+const RUNTIME_DIR = `${DECKER_ROOT}/runtime`;
 
 function resolve(recipe: Recipe): Recipe {
   const p = recipe.artifactsHostPath ?? "runtime/artifacts";
@@ -36,12 +37,12 @@ export type EmitResult = {
 export async function emit(
   name: string,
   recipe: Recipe,
-  opts: { attached?: boolean } = {},
+  opts: { attached?: boolean; runtimeDir?: string } = {},
 ): Promise<EmitResult> {
   validate(recipe);
   recipe = resolve(recipe);
   const manifestDir = `${DECKER_ROOT}/manifests/${name}`;
-  const runtimeDir = `${DECKER_ROOT}/runtime`;
+  const runtimeDir = opts.runtimeDir ?? `${DECKER_ROOT}/runtime`;
   const ctx = { manifestRoot: `\${DECKER_ROOT}/runtime`, attached: opts.attached };
 
   const selected: Renderer[] = [rendererFor("pods", recipe.target?.pods)];
@@ -84,15 +85,17 @@ export async function emit(
   return { binaries, imageBuilds, selected, paths: { runtimeDir, manifestDir } };
 }
 
-async function materializeRuntime(manifestDir: string, runtimeDir: string) {
+// Callers run this before generating artifacts, so the dir is empty when
+// artifacts land in it and materialize is a plain copy — no wipe, no exception.
+export async function cleanRuntime(runtimeDir: string = RUNTIME_DIR): Promise<void> {
   try {
-    for await (const entry of Deno.readDir(runtimeDir)) {
-      if (entry.name === "artifacts") continue;
-      await Deno.remove(`${runtimeDir}/${entry.name}`, { recursive: true });
-    }
+    await Deno.remove(runtimeDir, { recursive: true });
   } catch (e) {
     if (!(e instanceof Deno.errors.NotFound)) throw e;
   }
+}
+
+async function materializeRuntime(manifestDir: string, runtimeDir: string) {
   await copyExpanded(manifestDir, runtimeDir);
 }
 

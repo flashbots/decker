@@ -13,8 +13,8 @@ async function fileExists(p: string): Promise<boolean> {
   }
 }
 
-export async function down(): Promise<number> {
-  if (!(await fileExists(RUNTIME_DIR))) return 0;
+export async function down(runtimeDir: string = RUNTIME_DIR): Promise<number> {
+  if (!(await fileExists(runtimeDir))) return 0;
   let code = 0;
   // processes first so they detach from any podman backends, then pods
   const ordered = [
@@ -22,7 +22,7 @@ export async function down(): Promise<number> {
     ...allRenderers().filter((r) => r.slot === "pods" && r.stop),
   ];
   for (const r of ordered) {
-    const c = await r.stop!(RUNTIME_DIR);
+    const c = await r.stop!(runtimeDir);
     if (c !== 0) code = c;
   }
   return code;

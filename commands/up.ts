@@ -1,32 +1,32 @@
 import { Command } from "jsr:@cliffy/command@^1.0.0-rc.7";
 import { isAbsolute, join, toFileUrl } from "jsr:@std/path@^1.0.0";
 import { generateArtifacts, loadRecipe, missingBinaries } from "../utils/build.ts";
-import { emit } from "../utils/emit.ts";
+import { cleanRuntime, emit } from "../utils/emit.ts";
 import { ensureImages } from "../utils/image-build.ts";
 import { DEFAULT_MANIFEST, ensureClone, loadManifest } from "../utils/manifest.ts";
 import { dim, done, fail, note, red, rule, step, summary } from "../utils/term.ts";
-import type { ImageBuildSpec, ImageEngine, Recipe, Renderer, RendererPaths } from "../utils/types.ts";
+import type { ImageEngine, Recipe, Renderer, RendererPaths } from "../utils/types.ts";
 
 const DECKER_ROOT = new URL("../", import.meta.url).pathname.replace(/\/$/, "");
 const RUNTIME_DIR = `${DECKER_ROOT}/runtime`;
 
-export type Target =
-  | { kind: "recipe"; target: string }
-  | { kind: "manifest"; path: string }
-  | { kind: "yaml"; path: string };
+// What the user handed `decker up` to bring up: a recipe (by name or .ts path)
+// or a project file (a decker.ts exporting `project`).
+export type Input =
+  | { kind: "recipe"; ref: string }
+  | { kind: "project"; path: string };
 
-export async function resolveTarget(arg?: string): Promise<Target> {
-  if (!arg) return { kind: "manifest", path: DEFAULT_MANIFEST };
-  if (arg.endsWith(".yaml")) return { kind: "yaml", path: arg };
+export async function resolveInput(arg?: string): Promise<Input> {
+  if (!arg) return { kind: "project", path: DEFAULT_MANIFEST };
   if (arg.endsWith(".ts") || arg.includes("/")) {
     const abs = isAbsolute(arg) ? arg : join(Deno.cwd(), arg);
     const real = await Deno.realPath(abs);
     const mod = await import(toFileUrl(real).href);
-    if (mod.project) return { kind: "manifest", path: real };
-    if (mod.recipe) return { kind: "recipe", target: real };
+    if (mod.project) return { kind: "project", path: real };
+    if (mod.recipe) return { kind: "recipe", ref: real };
     throw new Error(`${arg} must export 'recipe' or 'project'`);
   }
-  return { kind: "recipe", target: arg };
+  return { kind: "recipe", ref: arg };
 }
 
 export function printSummary(renderers: Renderer[], paths: RendererPaths) {
@@ -51,8 +51,8 @@ function applyTargetOverride(recipe: Recipe, override?: TargetOverride): Recipe 
   };
 }
 
-export async function runManifest(sub: "up" | "start", manifestPath: string): Promise<number> {
-  const m = await loadManifest(manifestPath);
+export async function upProject(sub: "up" | "start", projectPath: string): Promise<number> {
+  const m = await loadManifest(projectPath);
   const into = await ensureClone(m.project);
   const extra: string[] = [];
   if (m.project.target?.pods) extra.push("--pods", m.project.target.pods);
@@ -73,52 +73,59 @@ export type UpOutcome = {
   paths: RendererPaths;
 };
 
-export async function upTarget(
-  target: string,
+// up a recipe identified by name or .ts path (loads it, then upRecipe).
+export async function upRecipeFile(
+  ref: string,
   override?: TargetOverride,
-  opts: { attached?: boolean } = {},
+  opts: { attached?: boolean; runtimeDir?: string } = {},
 ): Promise<UpOutcome> {
-  let loadedRecipe: Recipe | null = null;
+  const { name, recipe } = await loadRecipe(ref);
+  return await upRecipe(name, recipe, override, opts);
+}
+
+// up an in-memory recipe (no file). Scripts use this to run a parameterized
+// sibling — e.g. contender pointed at a specific builder.
+export async function upRecipe(
+  name: string,
+  recipeIn: Recipe,
+  override?: TargetOverride,
+  opts: { attached?: boolean; runtimeDir?: string } = {},
+): Promise<UpOutcome> {
+  const runtimeDir = opts.runtimeDir ?? RUNTIME_DIR;
+  const recipe = applyTargetOverride(recipeIn, override);
   let renderers: Renderer[] = [];
-  let paths: RendererPaths = { runtimeDir: RUNTIME_DIR, manifestDir: "" };
-  let imageBuilds: Map<string, ImageBuildSpec> = new Map();
+  let paths: RendererPaths = { runtimeDir, manifestDir: "" };
 
-  if (target.endsWith(".yaml")) {
-    paths = { runtimeDir: RUNTIME_DIR, manifestDir: "" };
-  } else {
-    const { name, recipe: loaded } = await loadRecipe(target);
-    const recipe = applyTargetOverride(loaded, override);
-    loadedRecipe = recipe;
+  rule(name);
 
-    rule(name);
+  await cleanRuntime(runtimeDir);
 
-    if (recipe.artifacts) {
-      const sArt = step("generating artifacts");
-      try {
-        await generateArtifacts(recipe);
-      } catch (e) {
-        fail(sArt, (e as Error).message);
-        return { code: 1, renderers, paths };
-      }
-      done(sArt, `${recipe.artifacts.generator}/${recipe.artifacts.fork}`);
-    }
-
-    const sEmit = step("rendering manifests");
-    const emitted = await emit(name, recipe, { attached: opts.attached });
-    imageBuilds = emitted.imageBuilds;
-    renderers = emitted.selected;
-    paths = emitted.paths;
-    done(sEmit, renderers.map((r) => r.name).join(" + "));
-
-    const missing = missingBinaries(emitted.binaries);
-    if (missing.length > 0) {
-      console.error("");
-      console.error(red("✗ host binaries not found:"));
-      for (const b of missing) console.error(`    ${b}`);
-      console.error("");
-      console.error(`  ${dim("place them in ./bin/, set 'binary' in the recipe, or install on PATH")}`);
+  if (recipe.artifacts) {
+    const sArt = step("generating artifacts");
+    try {
+      await generateArtifacts(recipe);
+    } catch (e) {
+      fail(sArt, (e as Error).message);
       return { code: 1, renderers, paths };
     }
+    done(sArt, `${recipe.artifacts.generator}/${recipe.artifacts.fork}`);
+  }
+
+  const sEmit = step("rendering manifests");
+  const emitted = await emit(name, recipe, { attached: opts.attached, runtimeDir });
+  const imageBuilds = emitted.imageBuilds;
+  renderers = emitted.selected;
+  paths = emitted.paths;
+  done(sEmit, renderers.map((r) => r.name).join(" + "));
+
+  const missing = missingBinaries(emitted.binaries);
+  if (missing.length > 0) {
+    console.error("");
+    console.error(red("✗ host binaries not found:"));
+    for (const b of missing) console.error(`    ${b}`);
+    console.error("");
+    console.error(`  ${dim("place them in ./bin/, set 'binary' in the recipe, or install on PATH")}`);
+    return { code: 1, renderers, paths };
   }
 
   if (imageBuilds.size > 0) {
@@ -153,13 +160,13 @@ export async function upTarget(
     done(sp);
   }
 
-  if ((loadedRecipe?.scripts ?? []).length > 0) {
+  if ((recipe.scripts ?? []).length > 0) {
     rule("scripts");
-    for (const script of loadedRecipe?.scripts ?? []) {
+    for (const script of recipe.scripts ?? []) {
       const label = script.name || "script";
       const t = performance.now();
       try {
-        await script(loadedRecipe!);
+        await script(recipe);
         note("✓", label, t);
       } catch (e) {
         console.error(red(`✗ ${label} failed: ${(e as Error).message}`));
@@ -185,25 +192,25 @@ export async function upTarget(
 export async function up(
   arg?: string,
   override?: TargetOverride,
-  opts: { attached?: boolean } = {},
+  opts: { attached?: boolean; runtimeDir?: string } = {},
 ): Promise<number> {
-  const t = await resolveTarget(arg);
-  if (t.kind === "manifest") return await runManifest("up", t.path);
-  return (await upTarget(t.kind === "recipe" ? t.target : t.path, override, opts)).code;
+  const input = await resolveInput(arg);
+  if (input.kind === "project") return await upProject("up", input.path);
+  return (await upRecipeFile(input.ref, override, opts)).code;
 }
 
 export const command = new Command()
   .description("Start a recipe and detach")
   .option("--pods <renderer:string>", "Override recipe target for pods")
   .option("--processes <renderer:string>", "Override recipe target for processes")
-  .arguments("[target:string]")
-  .action(async (opts, target?: string) => {
+  .arguments("[input:string]")
+  .action(async (opts, arg?: string) => {
     const override: TargetOverride = { pods: opts.pods, processes: opts.processes };
-    const t = await resolveTarget(target);
-    if (t.kind === "manifest") {
-      Deno.exit(await runManifest("up", t.path));
+    const input = await resolveInput(arg);
+    if (input.kind === "project") {
+      Deno.exit(await upProject("up", input.path));
     }
-    const out = await upTarget(t.kind === "recipe" ? t.target : t.path, override);
+    const out = await upRecipeFile(input.ref, override);
     if (out.code === 0) printSummary(out.renderers, out.paths);
     Deno.exit(out.code);
   });

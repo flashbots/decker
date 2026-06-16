@@ -1,5 +1,6 @@
 import { Command } from "jsr:@cliffy/command@^1.0.0-rc.7";
 import { buildOne, generateArtifacts, loadRecipe, missingBinaries } from "../utils/build.ts";
+import { cleanRuntime } from "../utils/emit.ts";
 import { done, fail, step, warn } from "../utils/term.ts";
 
 const RECIPES_DIR = new URL("../recipes/", import.meta.url);
@@ -19,6 +20,7 @@ export const command = new Command()
     const targets = recipes.length === 0 ? await listRecipes() : recipes;
     for (const r of targets) {
       const { recipe } = await loadRecipe(r);
+      await cleanRuntime();
       const sArt = step(`generating artifacts for ${r}`);
       try {
         await generateArtifacts(recipe);

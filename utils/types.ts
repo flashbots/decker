@@ -175,6 +175,7 @@ export type Renderer = {
   name: string;
   slot: RendererSlot;
   imageEngine?: ImageEngine;
+  hostGateway?: string;
   render(recipe: Recipe, ctx: RenderCtx): RenderResult;
   start?(paths: RendererPaths): Promise<number>;
   stop?(runtimeDir: string): Promise<number>;

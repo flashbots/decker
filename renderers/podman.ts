@@ -18,6 +18,7 @@ import type {
 import { imageTag } from "../utils/image-build.ts";
 
 export const DOZZLE_PORT = 18080;
+const HOST_GATEWAY = "host.containers.internal";
 
 const yamlOpts = { lineWidth: -1, useAnchors: false, skipInvalid: false } as const;
 
@@ -74,6 +75,7 @@ export const renderer: Renderer = {
   name: "podman",
   slot: "pods",
   imageEngine: "podman",
+  hostGateway: HOST_GATEWAY,
   render: build,
   start,
   stop,
@@ -81,7 +83,7 @@ export const renderer: Renderer = {
 };
 
 function hostFor(loc: ReturnType<typeof findComponent>): string {
-  if (loc.kind === "process") return "host.containers.internal";
+  if (loc.kind === "process") return HOST_GATEWAY;
   return loc.pod.name;
 }
 

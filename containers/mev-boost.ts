@@ -2,6 +2,9 @@ import type { ContainerDef, ContainerResult, Ctx } from "../utils/types.ts";
 
 export const ports = {
   http: 18550,
+  // Prometheus metrics (enabled via --metrics below). Shifted off helix-sim's
+  // 18551 to avoid a host-port collision in multi-relay.
+  metrics: 18560,
 };
 
 const GENESIS_FORK_VERSION = "0x20000089";
@@ -27,6 +30,8 @@ export function buildContainer(def: ContainerDef, ctx: Ctx): ContainerResult {
       args: [
         "--addr", `0.0.0.0:${ports.http}`,
         "--loglevel", "info",
+        "--metrics",
+        "--metrics-addr", `0.0.0.0:${ports.metrics}`,
         ...relayArgs,
       ],
       env: {

@@ -11,13 +11,18 @@ export const ports: Ports = {
 export function buildContainer(def: ContainerDef, ctx: Ctx): ContainerResult {
   const el = def.refs?.el;
   const builder = def.refs?.builder;
-  const peer = def.refs?.peer;
   if (!el) throw new Error(`beacon ${def.name}: missing refs.el`);
   const ps = (def.config?.ports as Ports | undefined) ?? ports;
-  const peerMultiaddr = peer ? (() => {
-    const u = new URL(ctx.url(peer, "p2p-tcp"));
+
+  // Peers to dial explicitly. Prefer config.peers (a list, for a full mesh);
+  // fall back to the legacy single refs.peer. Every beacon dials every other so
+  // connectivity never hinges on a single reciprocated link.
+  const peerNames = (def.config?.peers as string[] | undefined) ??
+    (def.refs?.peer ? [def.refs.peer] : []);
+  const peerMultiaddrs = peerNames.map((p) => {
+    const u = new URL(ctx.url(p, "p2p-tcp"));
     return `/dns4/${u.hostname}/tcp/${u.port}`;
-  })() : "";
+  });
   return {
     container: {
       image: "docker.io/sigp/lighthouse:v8.1.0",
@@ -40,13 +45,13 @@ export function buildContainer(def: ContainerDef, ctx: Ctx): ContainerResult {
         "--http-address", "0.0.0.0",
         "--http-allow-origin", "*",
         "--disable-packet-filter",
-        "--target-peers", peer ? "5" : "0",
+        "--target-peers", peerNames.length > 0 ? "5" : "0",
         "--execution-endpoint", ctx.url(el, "authrpc"),
         "--execution-jwt", "/artifacts/jwtsecret",
         "--always-prepare-payload",
         "--prepare-payload-lookahead", "8000",
         "--suggested-fee-recipient", "0x690B9A9E9aa1C9dB991C7721a92d351Db4FaC990",
-        "--libp2p-addresses", peerMultiaddr,
+        ...(peerMultiaddrs.length > 0 ? ["--libp2p-addresses", peerMultiaddrs.join(",")] : []),
         ...(builder ? [
           "--builder", ctx.url(builder, "http"),
           "--builder-fallback-epochs-since-finalization", "0",

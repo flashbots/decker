@@ -10,17 +10,29 @@ import type { Recipe } from "../utils/types.ts";
 //
 // No `artifacts`: contender is a pure client and consumes none, so up() skips
 // generation entirely.
-export const recipe: Recipe = {
-  pods: [
-    {
-      name: "contender",
-      containers: [
-        {
-          name: "contender",
-          prototype: "contender",
-          config: { rpcUrl: "http://rbuilder-1:8745", duration: 30 },
-        },
-      ],
-    },
-  ],
-};
+export function contenderBench(
+  opts: { rpcUrl: string; txsUrl?: string; duration?: number; privKey?: string },
+): Recipe {
+  return {
+    pods: [
+      {
+        name: "contender",
+        containers: [
+          {
+            name: "contender",
+            prototype: "contender",
+            config: {
+              rpcUrl: opts.rpcUrl,
+              duration: opts.duration ?? 30,
+              ...(opts.txsUrl ? { txsUrl: opts.txsUrl } : {}),
+              ...(opts.privKey ? { privKey: opts.privKey } : {}),
+            },
+          },
+        ],
+      },
+    ],
+  };
+}
+
+// Default for `decker up contender-bench`: target rbuilder-1.
+export const recipe: Recipe = contenderBench({ rpcUrl: "http://rbuilder-1:8745" });

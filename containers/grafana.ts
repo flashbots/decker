@@ -77,10 +77,11 @@ providers:
     container: {
       image: "docker.io/grafana/grafana:13.0.1",
       env: {
-        // Passwordless dev access. Grafana 13 allows only the Viewer role
-        // for anonymous users — enough for query / list / get-panel-image
-        // through the MCP. Host port is reachable only over Tailscale.
+        // Passwordless dev access as anonymous Admin, so the UI can browse
+        // metrics (Explore needs Editor+) without a login. Still covers the MCP's
+        // query/list/get-panel-image. Host port is reachable only over Tailscale.
         GF_AUTH_ANONYMOUS_ENABLED: "true",
+        GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin",
         GF_AUTH_DISABLE_LOGIN_FORM: "true",
         GF_AUTH_BASIC_ENABLED: "false",
         // Remote rendering via the image-renderer sidecar. Grafana 13 refuses

@@ -4,10 +4,10 @@ import { lookup } from "../utils/resolve.ts";
 import { portNum } from "../utils/types.ts";
 import { accent, bold, dim, muted, rule, warn } from "../utils/term.ts";
 import { down } from "./down.ts";
-import { printSummary, resolveTarget, runManifest, type TargetOverride, type UpOutcome, upTarget } from "./up.ts";
+import { printSummary, resolveInput, type TargetOverride, type UpOutcome, upProject, upRecipeFile } from "./up.ts";
 
-async function advertise(target: string, out: UpOutcome) {
-  const { recipe } = await loadRecipe(target);
+async function advertise(ref: string, out: UpOutcome) {
+  const { recipe } = await loadRecipe(ref);
   rule("services");
   const advertised = [
     ...recipe.pods.flatMap((p) => p.containers),
@@ -30,20 +30,20 @@ export const command = new Command()
   .description("Start and attach to a recipe (take down with Ctrl+C)")
   .option("--pods <renderer:string>", "Override recipe target for pods")
   .option("--processes <renderer:string>", "Override recipe target for processes")
-  .arguments("[target:string]")
-  .action(async (opts, target?: string) => {
+  .arguments("[input:string]")
+  .action(async (opts, arg?: string) => {
     const override: TargetOverride = { pods: opts.pods, processes: opts.processes };
-    const t = await resolveTarget(target);
-    if (t.kind === "manifest") {
+    const input = await resolveInput(arg);
+    if (input.kind === "project") {
       const noop = () => {};
       Deno.addSignalListener("SIGINT", noop);
       Deno.addSignalListener("SIGTERM", noop);
-      Deno.exit(await runManifest("start", t.path));
+      Deno.exit(await upProject("start", input.path));
     }
 
-    const out = await upTarget(t.kind === "recipe" ? t.target : t.path, override);
+    const out = await upRecipeFile(input.ref, override);
     if (out.code !== 0) Deno.exit(out.code);
-    if (t.kind === "recipe") await advertise(t.target, out);
+    await advertise(input.ref, out);
 
     let downing = false;
     const stop = async () => {

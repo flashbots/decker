@@ -74,7 +74,10 @@ export const recipe: Recipe = {
           name: "rbuilder-2",
           prototype: "rbuilder",
           refs: { el: "el-2", beacon: "beacon-2", relay: "mev-boost-relay-1" },
-          config: { port: 8845 },
+          // port override shifts the telemetry ports too (http+1/+2); declare them
+          // so ctx.url (e.g. the Prometheus scrape) resolves the real ports
+          // instead of the rbuilder prototype's static 8746/8747.
+          config: { port: 8845, ports: { http: 8845, redacted_telemetry: 8846, full_telemetry: 8847 } },
         },
       ],
     },
@@ -84,7 +87,8 @@ export const recipe: Recipe = {
         {
           name: "beacon-1",
           prototype: "lighthouse-beacon",
-          refs: { el: "el-1", builder: "mev-boost-1", peer: "helix-beacon-1" },
+          refs: { el: "el-1", builder: "mev-boost-1" },
+          config: { peers: ["beacon-2", "helix-beacon-1"] },
         },
       ],
     },
@@ -94,7 +98,8 @@ export const recipe: Recipe = {
         {
           name: "beacon-2",
           prototype: beacon2,
-          refs: { el: "el-2", peer: "beacon-1" },
+          refs: { el: "el-2" },
+          config: { peers: ["beacon-1", "helix-beacon-1"] },
         },
       ],
     },
@@ -116,7 +121,8 @@ export const recipe: Recipe = {
         {
           name: "helix-beacon-1",
           prototype: helixBeacon,
-          refs: { el: "helix-sim-1", peer: "beacon-1" },
+          refs: { el: "helix-sim-1" },
+          config: { peers: ["beacon-1", "beacon-2"] },
         },
       ],
     },

@@ -1,8 +1,8 @@
 import type { ContainerDef, ContainerResult, Ctx, Ports } from "../utils/types.ts";
 
-// Listens on 9091 rather than Prometheus' default 9090 so it doesn't collide
-// with reth's metrics port when both are published on the same host.
-const HTTP_PORT = 9091;
+// Off Prometheus' default 9090 (reth's metrics port) and off 9091, which is
+// commonly held by a host-side pushgateway/exporter. 9009 avoids both.
+const HTTP_PORT = 9009;
 
 export const ports: Ports = {
   http: HTTP_PORT,
