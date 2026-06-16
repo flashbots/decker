@@ -1,6 +1,7 @@
 import { Command, ValidationError } from "jsr:@cliffy/command@^1.0.0-rc.7";
 import { fromFileUrl } from "jsr:@std/path@^1.0.0";
 import { accent, bold, dim, muted, red } from "./utils/term.ts";
+import { DEFAULT_MANIFEST, intoDir, isCloned, loadManifest, pull } from "./utils/manifest.ts";
 import { VERSION } from "./utils/version.ts";
 
 const me = await Deno.realPath(fromFileUrl(import.meta.url));
@@ -13,7 +14,7 @@ async function realPathOrNull(p: string): Promise<string | null> {
   }
 }
 
-const CARVE_OUT = new Set(["init", "spit", "pull", "help", "--help", "-h"]);
+const CARVE_OUT = new Set(["clone", "init", "pull", "help", "--help", "-h"]);
 const first = Deno.args[0];
 const noArgs = Deno.args.length === 0;
 const carved = noArgs || (first !== undefined && CARVE_OUT.has(first));
@@ -33,14 +34,19 @@ if (!carved) {
   const local = await realPathOrNull(`${Deno.cwd()}/cli.ts`);
   if (local && local !== me) await reexec(local);
   if (!local) {
-    const manifest = await realPathOrNull(`${Deno.cwd()}/decker.ts`);
-    if (manifest) {
-      const forked = await realPathOrNull(`${Deno.cwd()}/.decker/cli.ts`);
-      if (!forked) {
-        console.error(red("✗ decker.ts present but .decker/ missing — run `decker pull`"));
+    const manifestPath = await realPathOrNull(`${Deno.cwd()}/${DEFAULT_MANIFEST}`);
+    if (manifestPath) {
+      try {
+        const { project } = await loadManifest(DEFAULT_MANIFEST);
+        // Auto-clone the pinned source on first use. An existing clone is left
+        // untouched — it may hold local changes (see `decker pull`).
+        if (!await isCloned(project)) await pull(project);
+        const forked = await realPathOrNull(`${intoDir(project)}/cli.ts`);
+        if (forked && forked !== me) await reexec(forked);
+      } catch (e) {
+        console.error(red(`✗ ${(e as Error).message}`));
         Deno.exit(1);
       }
-      if (forked !== me) await reexec(forked);
     }
   }
 }
@@ -61,8 +67,8 @@ const main = new Command()
   .description("Decker — deck your own devnet");
 
 const COMMAND_ORDER = [
+  "clone",
   "init",
-  "spit",
   "pull",
   "recipes",
   "start",

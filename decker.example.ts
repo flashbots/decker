@@ -1,6 +1,6 @@
 // A standalone decker manifest.
 //
-// Copy this to decker.ts (or `decker spit`) and tweak.
+// Copy this to decker.ts (or `decker init`) and tweak.
 // Then run `decker pull` to clone+pin, followed by `decker start` or `decker up`.
 
 type DeckerProject = {

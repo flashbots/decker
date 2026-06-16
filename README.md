@@ -6,13 +6,6 @@ _Deck your own devnet_
 
 Decker lets you kickstart and vibecode any dev setup with complete freedom — powered by Deno, TypeScript and agent-first patterns!
 
-- **Generators:** Generate your own artifacts/configs dynamically
-- **Containers:** Write k8s-like blueprints or host processes
-- **Recipes:** Compose containers/processes into a single run
-- **Scripts:** Control recipe pre/post states and even launch child recipes
-- **Renderers:** Run your recipe on any target (podman, docker, process-compose and anything you want)
-- **CLI:** Hack on the clone, run immediately with preinstalled binary
-
 Rapidly vibehack your own containers and recipes, manipulate commands, plug in any tool you want! ⚡
 
 Own your recipes and features on your fork/revision and run from a `decker.ts` file in your developed project!
@@ -68,19 +61,32 @@ Do a `decker test` and you'll get a block built.
 
 ## Integration
 
-1. Fork/clone this repo or do `decker init` on an empty dir.
+1. Fork/clone this repo or do `decker clone` on an empty dir.
 
 2. Tell your agent to add containers/recipes/features.
 
 3. Commit and push to your fork.
 
-4. Go to your developed/tested project, do `decker spit`.
+4. Go to your developed/tested project, do `decker init`.
 
 5. Modify the decker file to point to your fork revision hash and recipe.
 
-That's it! And you have dev setup of your own suitable for local runs and CI, with `decker start` or `decker up` + `decker down`.
+That's it! And you have dev setup of your own suitable for local runs and CI.
+
+To start your fork's recipe, just `decker start` (or `decker up` + `decker down`) — the pinned source is cloned automatically on first run. Use `decker pull` to clone it explicitly; it never touches an existing clone.
 
 You can run any public recipe (and accessible private recipes) like this.
+
+## Layers
+
+You can evolve `decker` in multiple layers and use in dev or CI setups of your projects:
+
+- **Generators:** Generate your own artifacts/configs dynamically
+- **Containers:** Write k8s-like blueprints or host processes
+- **Recipes:** Compose containers/processes into a single run
+- **Scripts:** Control recipe pre/post states and even launch child recipes
+- **Renderers:** Run your recipe on any target (podman, docker, process-compose and anything you want)
+- **CLI:** Hack on the clone, run immediately with preinstalled binary
 
 ## Why?
 

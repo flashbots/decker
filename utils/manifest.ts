@@ -74,16 +74,6 @@ async function resolveRef(dir: string, ref: string): Promise<string> {
   throw new Error(`cannot resolve ref ${ref} in ${dir}`);
 }
 
-async function isDirty(dir: string): Promise<boolean> {
-  const { code, stdout } = await new Deno.Command("git", {
-    args: ["-C", dir, "status", "--porcelain"],
-    stdout: "piped",
-    stderr: "piped",
-  }).output();
-  if (code !== 0) throw new Error(`git status failed in ${dir}`);
-  return new TextDecoder().decode(stdout).trim().length > 0;
-}
-
 async function checkoutDetached(dir: string, ref: string): Promise<void> {
   const commit = await resolveRef(dir, ref);
   const { code, stderr } = await new Deno.Command("git", {
@@ -97,18 +87,9 @@ async function checkoutDetached(dir: string, ref: string): Promise<void> {
   }
 }
 
-async function fetchAll(dir: string): Promise<void> {
-  const { code, stderr } = await new Deno.Command("git", {
-    args: ["-C", dir, "fetch", "--quiet", "--all", "--tags"],
-    stdout: "piped",
-    stderr: "piped",
-  }).output();
-  if (code !== 0) {
-    await Deno.stderr.write(stderr);
-    throw new Error("git fetch failed");
-  }
-}
-
+// Clone the pinned source into the manifest's `into` dir and detach at `ref`.
+// Assumes the clone does not yet exist — callers must guard with `isCloned`, as
+// an existing clone is never modified (it may hold the user's local changes).
 export async function pull(p: DeckerProject): Promise<string> {
   const src = p.decker.source;
   const ref = p.decker.ref;
@@ -116,32 +97,18 @@ export async function pull(p: DeckerProject): Promise<string> {
   if (!ref) throw new Error("decker.ref required");
   const dst = intoDir(p);
 
-  if (!await isCloned(p)) {
-    const sp = step(`cloning ${src}`);
-    const { code, stderr } = await new Deno.Command("git", {
-      args: ["clone", "--quiet", src, dst],
-      stdout: "piped",
-      stderr: "piped",
-    }).output();
-    if (code !== 0) {
-      fail(sp, "git clone failed");
-      await Deno.stderr.write(stderr);
-      throw new Error("clone failed");
-    }
-    done(sp, dst);
-  } else {
-    if (await isDirty(dst)) {
-      throw new Error(`${dst} has uncommitted changes; refusing to checkout ${ref}`);
-    }
-    const spF = step(`fetching in ${dst}`);
-    try {
-      await fetchAll(dst);
-    } catch (e) {
-      fail(spF, (e as Error).message);
-      throw e;
-    }
-    done(spF);
+  const sp = step(`cloning ${src}`);
+  const { code, stderr } = await new Deno.Command("git", {
+    args: ["clone", "--quiet", src, dst],
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+  if (code !== 0) {
+    fail(sp, "git clone failed");
+    await Deno.stderr.write(stderr);
+    throw new Error("clone failed");
   }
+  done(sp, dst);
 
   const spC = step(`checking out ${ref}`);
   try {
@@ -154,17 +121,13 @@ export async function pull(p: DeckerProject): Promise<string> {
   return dst;
 }
 
+// The clone, once present, is the user's working copy — used as-is regardless
+// of its current commit. The `ref` pin only applies when cloning from scratch
+// (see `pull`); we don't re-enforce it here so local changes survive.
 export async function ensureClone(p: DeckerProject): Promise<string> {
   const dst = intoDir(p);
   if (!await isCloned(p)) {
     throw new Error(`${dst} not present — run \`decker pull\` first`);
-  }
-  const pinned = await resolveRef(dst, p.decker.ref);
-  const got = await head(dst);
-  if (got !== pinned) {
-    throw new Error(
-      `${dst} at ${got.slice(0, 12)} but manifest pins ${p.decker.ref} (${pinned.slice(0, 12)}) — run \`decker pull\``,
-    );
   }
   return dst;
 }
