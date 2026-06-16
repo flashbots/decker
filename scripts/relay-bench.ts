@@ -13,7 +13,7 @@ import type { Recipe, Script } from "../utils/types.ts";
 // get_header port (helix-1 4040, mev-boost-relay-1 9062) for direct read sampling.
 export type Target = { name: string; label: string; recipe: Recipe; relayPort: number };
 
-const DECKER_ROOT = new URL("../", import.meta.url).pathname.replace(/\/$/, "");
+import { DECKER_ROOT } from "../utils/root.ts";
 const PROM = "http://localhost:9009";
 const EL_RPC = "http://localhost:8545";
 // Floor for non-null submit metrics on a 12s-slot devnet: the builder needs ~2

@@ -1,6 +1,6 @@
 import type { ImageBuildSpec, ImageEngine } from "./types.ts";
 
-const DECKER_ROOT = new URL("../", import.meta.url).pathname.replace(/\/$/, "");
+import { DECKER_ROOT } from "./root.ts";
 const CACHE_DIR = `${DECKER_ROOT}/cache/images`;
 
 export function imageTag(spec: ImageBuildSpec): string {

@@ -1,7 +1,7 @@
 import { Command } from "jsr:@cliffy/command@^1.0.0-rc.7";
 import { allRenderers } from "../utils/renderers.ts";
 
-const DECKER_ROOT = new URL("../", import.meta.url).pathname.replace(/\/$/, "");
+import { DECKER_ROOT } from "../utils/root.ts";
 const RUNTIME_DIR = `${DECKER_ROOT}/runtime`;
 
 async function fileExists(p: string): Promise<boolean> {

@@ -2,7 +2,7 @@ import { dirname, isAbsolute } from "jsr:@std/path@^1.0.0";
 import { rendererFor } from "./renderers.ts";
 import type { ImageBuildSpec, Recipe, Renderer, RendererPaths } from "./types.ts";
 
-const DECKER_ROOT = new URL("../", import.meta.url).pathname.replace(/\/$/, "");
+import { DECKER_ROOT } from "./root.ts";
 const RUNTIME_DIR = `${DECKER_ROOT}/runtime`;
 
 function resolve(recipe: Recipe): Recipe {

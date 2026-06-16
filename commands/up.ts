@@ -7,7 +7,7 @@ import { DEFAULT_MANIFEST, ensureClone, loadManifest } from "../utils/manifest.t
 import { dim, done, fail, note, red, rule, step, summary } from "../utils/term.ts";
 import type { ImageEngine, Recipe, Renderer, RendererPaths } from "../utils/types.ts";
 
-const DECKER_ROOT = new URL("../", import.meta.url).pathname.replace(/\/$/, "");
+import { DECKER_ROOT } from "../utils/root.ts";
 const RUNTIME_DIR = `${DECKER_ROOT}/runtime`;
 
 // What the user handed `decker up` to bring up: a recipe (by name or .ts path)

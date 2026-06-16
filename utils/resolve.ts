@@ -2,7 +2,7 @@ import { isAbsolute, join } from "jsr:@std/path@^1.0.0";
 import { portNum } from "./types.ts";
 import type { ContainerDef, Ctx, HostCtx, Pod, ProcessDef, Prototype, Recipe } from "./types.ts";
 
-const DECKER_ROOT = new URL("../", import.meta.url).pathname.replace(/\/$/, "");
+import { DECKER_ROOT } from "./root.ts";
 
 const CONTAINERS_DIR = new URL("../containers/", import.meta.url);
 

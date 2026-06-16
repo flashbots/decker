@@ -2,7 +2,7 @@ import { basename, fromFileUrl, isAbsolute, join, toFileUrl } from "jsr:@std/pat
 import { emit } from "./emit.ts";
 import type { Recipe } from "./types.ts";
 
-const DECKER_ROOT = new URL("../", import.meta.url).pathname.replace(/\/$/, "");
+import { DECKER_ROOT } from "./root.ts";
 const RECIPES_DIR = new URL("../recipes/", import.meta.url);
 const GENERATORS_DIR = new URL("../generators/", import.meta.url);
 

@@ -17,3 +17,22 @@ jobs:
         run: deno lint
       - name: Type-check
         run: deno check $(git ls-files '*.ts')
+
+  e2e:
+    # Upstream only: forks (and people vibehacking their clone) skip this so the
+    # heavier suite isn't a burden. PRs against flashbots/decker still run it,
+    # because `github.repository` is the base repo for pull_request events.
+    if: github.repository == 'flashbots/decker'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Compile binary
+        run: make compile OUTPUT=decker
+      - name: E2E
+        # Test the real compiled artifact, the way users run it.
+        env:
+          DECKER_BIN: ${{ github.workspace }}/decker
+        run: deno test -A e2e/
