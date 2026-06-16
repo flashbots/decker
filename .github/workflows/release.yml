@@ -32,6 +32,9 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
+      - name: Stamp version
+        if: github.ref_type == 'tag'
+        run: echo "export const VERSION = \"${GITHUB_REF_NAME#v}\";" > utils/version.ts
       - name: Compile
         run: |
           deno compile \

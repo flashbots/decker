@@ -1,6 +1,7 @@
 import { Command } from "jsr:@cliffy/command@^1.0.0-rc.7";
 import { fromFileUrl } from "jsr:@std/path@^1.0.0";
 import { accent, bold, dim, muted, red } from "./utils/term.ts";
+import { VERSION } from "./utils/version.ts";
 
 const me = await Deno.realPath(fromFileUrl(import.meta.url));
 
@@ -44,7 +45,6 @@ if (!carved) {
   }
 }
 
-const VERSION = "0.1.0";
 const main = new Command()
   .name("decker")
   .version(VERSION)
