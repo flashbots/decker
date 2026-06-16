@@ -36,18 +36,7 @@ jobs:
         if: github.ref_type == 'tag'
         run: echo "export const VERSION = \"${GITHUB_REF_NAME#v}\";" > utils/version.ts
       - name: Compile
-        run: |
-          deno compile \
-            --allow-all \
-            --target ${{ matrix.target }} \
-            --include commands \
-            --include containers \
-            --include generators \
-            --include recipes \
-            --include renderers \
-            --include decker.example.ts \
-            --output ${{ matrix.name }} \
-            cli.ts
+        run: make compile OUTPUT=${{ matrix.name }} TARGET=${{ matrix.target }}
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.name }}

@@ -49,6 +49,15 @@ const main = new Command()
   .throwErrors()
   .name("decker")
   .version(VERSION)
+  // Print just the version for both -V and --version; cliffy otherwise dumps a
+  // long build-info form for --version and a short one for -V.
+  .versionOption("-V, --version", "Show the version", {
+    global: true,
+    action() {
+      console.log(VERSION);
+      Deno.exit(0);
+    },
+  })
   .description("Decker — deck your own devnet");
 
 const COMMAND_ORDER = [
