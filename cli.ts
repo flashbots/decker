@@ -1,4 +1,4 @@
-import { Command } from "jsr:@cliffy/command@^1.0.0-rc.7";
+import { Command, ValidationError } from "jsr:@cliffy/command@^1.0.0-rc.7";
 import { fromFileUrl } from "jsr:@std/path@^1.0.0";
 import { accent, bold, dim, muted, red } from "./utils/term.ts";
 import { VERSION } from "./utils/version.ts";
@@ -46,6 +46,7 @@ if (!carved) {
 }
 
 const main = new Command()
+  .throwErrors()
   .name("decker")
   .version(VERSION)
   .description("Decker — deck your own devnet");
@@ -118,4 +119,15 @@ if (wantsHelp) {
   Deno.exit(0);
 }
 
-await main.parse(Deno.args);
+try {
+  await main.parse(Deno.args);
+} catch (err) {
+  // Usage errors render the same help as bare `decker`; rethrow anything else
+  // so genuine faults keep their stack instead of looking like a usage hint.
+  if (err instanceof ValidationError) {
+    printHelp();
+    console.error(red(`  ✗ ${err.message}`));
+    Deno.exit(err.exitCode || 2);
+  }
+  throw err;
+}
