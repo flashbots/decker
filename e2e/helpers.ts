@@ -53,10 +53,17 @@ export const project: P = { decker: { source: ${JSON.stringify(REPO_ROOT)}, ref:
   await Deno.writeTextFile(join(dir, "decker.ts"), body);
 }
 
-export async function has(bin: string): Promise<boolean> {
+// The podman renderer bind-mounts the rootless API socket (for the Dozzle log
+// viewer), so a real launch needs the socket service running, not just the
+// podman binary. This reports exactly that.
+export async function hasPodmanSocket(): Promise<boolean> {
   try {
-    const { code } = await new Deno.Command(bin, { args: ["--version"], stdout: "null", stderr: "null" }).output();
-    return code === 0;
+    const { code, stdout } = await new Deno.Command("podman", {
+      args: ["info", "--format", "{{.Host.RemoteSocket.Exists}}"],
+      stdout: "piped",
+      stderr: "null",
+    }).output();
+    return code === 0 && new TextDecoder().decode(stdout).trim() === "true";
   } catch {
     return false;
   }

@@ -1,14 +1,15 @@
 import { assertEquals } from "jsr:@std/assert@^1.0.0";
 import { join } from "jsr:@std/path@^1.0.0";
-import { has, REPO_ROOT, runDecker, withTmp } from "./helpers.ts";
+import { hasPodmanSocket, REPO_ROOT, runDecker, withTmp } from "./helpers.ts";
 
 const FIXTURE = join(REPO_ROOT, "e2e", "fixtures", "minimal.ts");
 
-// A real launch needs podman (the default pods renderer). Skipped when podman
-// is absent so local `deno test` and forks stay green; CI runs it.
+// A real launch needs the rootless podman API socket running (the renderer
+// mounts it for Dozzle). Skipped when it isn't, so local `deno test` and forks
+// stay green; CI starts the socket so this runs there.
 Deno.test({
   name: "up/down: launches and tears down a minimal busybox pod",
-  ignore: !(await has("podman")),
+  ignore: !(await hasPodmanSocket()),
   fn: async () => {
     await withTmp(async (root) => {
       const env = { DECKER_ROOT: root };

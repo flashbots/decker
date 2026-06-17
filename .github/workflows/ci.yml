@@ -31,6 +31,13 @@ jobs:
           deno-version: v2.x
       - name: Compile binary
         run: make compile OUTPUT=decker
+      - name: Start podman API socket
+        # The podman renderer mounts the rootless API socket (for Dozzle); the
+        # runner doesn't start it by default. Best-effort — the launch test
+        # skips itself if the socket still isn't up, so this can't wedge CI.
+        run: |
+          systemctl --user enable --now podman.socket || true
+          podman info --format 'socket={{.Host.RemoteSocket.Path}} exists={{.Host.RemoteSocket.Exists}}' || true
       - name: E2E
         # Test the real compiled artifact, the way users run it.
         env:
