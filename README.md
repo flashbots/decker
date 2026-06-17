@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/flashbots/decker/actions/workflows/ci.yml"><img src="https://github.com/flashbots/decker/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://github.com/flashbots/decker/releases"><img src="https://badgen.net/github/release/flashbots/decker?icon=github&color=orange" alt="Release"></a>
+  <a href="https://github.com/flashbots/decker/releases"><img src="https://badgen.net/github/release/flashbots/decker?icon=github&color=orange&cache=300" alt="Release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2bbc8a" alt="License: MIT"></a>
   <a href="https://deno.com"><img src="https://img.shields.io/badge/Deno-2-blue?logo=deno&logoColor=white" alt="Deno"></a>
 </p>
