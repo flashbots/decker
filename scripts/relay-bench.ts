@@ -10,7 +10,7 @@ import type { Recipe, Script } from "../utils/types.ts";
 
 // One relay to benchmark: a name (runtime dir), the metric label its containers
 // tag submissions with, the single-relay devnet recipe, and the relay's host
-// get_header port (helix-1 4040, mev-boost-relay-1 9062) for direct read sampling.
+// getHeader port (helix-1 4040, mev-boost-relay-1 9062) for direct bid sampling.
 export type Target = { name: string; label: string; recipe: Recipe; relayPort: number };
 
 import { DECKER_ROOT } from "../utils/root.ts";
@@ -49,6 +49,21 @@ async function waitForLive(deadlineMs: number): Promise<void> {
   throw new Error("relay-bench: chain not producing before deadline");
 }
 
+// Each relay runs in a fresh devnet with a fresh prometheus on 9009; its first
+// scrape of the new rbuilder can land after the load window. getHeader samples
+// bypass prometheus so they're always there, but the submitBlock series may not
+// be scraped yet — reading at a fixed offset intermittently yields "—". Wait until
+// the series is actually present before reading; if it never appears, that's a
+// genuine no-data and we report "—" honestly.
+async function waitForSubmitSeries(relay: string, deadlineMs: number): Promise<boolean> {
+  while (Date.now() < deadlineMs) {
+    const n = await prom(`sum(relay_submit_time_count{relay="${relay}"})`, Date.now() / 1000);
+    if (n != null && n > 0) return true;
+    await sleep(2000);
+  }
+  return false;
+}
+
 async function prom(expr: string, atSec: number): Promise<number | null> {
   const u = new URL(`${PROM}/api/v1/query`);
   u.searchParams.set("query", expr);
@@ -59,8 +74,9 @@ async function prom(expr: string, atSec: number): Promise<number | null> {
   return v == null ? null : Number(v);
 }
 
-// relay_submit_time is in ms; mev_boost_relay_latency is in seconds (→ ×1000).
-// submit_* (per bid) is dense; get_header/get_payload are per-slot, so sparse.
+// submitBlock latency (relay_submit_time, ms) is per-bid so it's dense; the
+// proposer-side getHeader/getPayload are per-slot, so we sample getHeader
+// ourselves (below) rather than rely on the sparse per-slot metric.
 async function headSlot(): Promise<number | null> {
   const r = await fetch(`${BEACON}/eth/v1/beacon/headers/head`).catch(() => null);
   if (!r || !r.ok) return null;
@@ -125,13 +141,13 @@ async function relayStats(relay: string, startSec: number, endSec: number): Prom
   // per-slot (one proposer), so they'd always be too sparse for a short run — we
   // deliberately don't report them here.
   return {
-    submit_p50_ms: await q(`histogram_quantile(0.5, sum(rate(relay_submit_time_bucket{${r}}[${W}])) by (le))`),
-    submit_p99_ms: await q(`histogram_quantile(0.99, sum(rate(relay_submit_time_bucket{${r}}[${W}])) by (le))`),
-    submit_error_rate: await q(
+    submit_block_p50_ms: await q(`histogram_quantile(0.5, sum(rate(relay_submit_time_bucket{${r}}[${W}])) by (le))`),
+    submit_block_p99_ms: await q(`histogram_quantile(0.99, sum(rate(relay_submit_time_bucket{${r}}[${W}])) by (le))`),
+    submit_block_error_rate: await q(
       `sum(increase(relay_errors{${r}}[${W}]))` +
         ` / clamp_min(sum(increase(relay_accepted_submissions{${r}}[${W}])), 1)`,
     ),
-    submissions: await q(`sum(increase(relay_accepted_submissions{${r}}[${W}]))`),
+    submit_block_count: await q(`sum(increase(relay_accepted_submissions{${r}}[${W}]))`),
   };
 }
 
@@ -151,23 +167,62 @@ async function measureOneRelay(t: Target): Promise<{ relay: string; stats: Recor
     { attached: true, runtimeDir: loadDir },
   );
   if (load.code !== 0) throw new Error(`${t.name}: load up failed (${load.code})`);
-  // While contender loads, hammer the relay's get_header directly for dense
-  // read-latency samples.
+  // While contender loads, hammer the relay's getHeader directly for dense
+  // bid-serve latency samples.
   const [, reads] = await Promise.all([
     sleep(LOAD_SECONDS * 1000),
     hammerReads(t.relayPort, Date.now() + LOAD_SECONDS * 1000),
   ]);
-  const endSec = Date.now() / 1000;
   await down(loadDir);
 
   await sleep(8000); // let the last scrape land
-  const stats = await relayStats(t.label, startSec, endSec);
-  stats.read_p50_ms = pct(reads, 0.5);
-  stats.read_p99_ms = pct(reads, 0.99);
-  stats.read_samples = reads.length;
+  // The builder ramps over the first slots, so the slower relay's first accepted
+  // submissions can land just after the read window closed. Extend the submit
+  // window's end until those samples are present, so the rate/increase query
+  // actually spans them (reads keep their own fixed window above).
+  const present = await waitForSubmitSeries(t.label, Date.now() + 30_000);
+  const scrapeUp = await prom(`up{job="rbuilder-1"}`, Date.now() / 1000);
+  if (!present) console.log(`  [warn] ${t.label}: no submissions in run (rbuilder scrape up=${scrapeUp})`);
+  const metricEnd = Date.now() / 1000;
+  const stats = await relayStats(t.label, startSec, metricEnd);
+  stats.get_header_p50_ms = pct(reads, 0.5);
+  stats.get_header_p99_ms = pct(reads, 0.99);
+  stats.get_header_count = reads.length;
 
   await down(devDir);
   return { relay: t.label, stats };
+}
+
+// Rows in display order; submitBlock (inbound) first, then getHeader (outbound).
+const METRIC_ROWS = [
+  "submit_block_p50_ms",
+  "submit_block_p99_ms",
+  "submit_block_error_rate",
+  "submit_block_count",
+  "get_header_p50_ms",
+  "get_header_p99_ms",
+  "get_header_count",
+] as const;
+
+function fmtVal(v: number | null | undefined): string {
+  if (v == null) return "—";
+  return Number.isInteger(v) ? String(v) : String(Math.round(v * 1000) / 1000);
+}
+
+// Print a metric-per-row, relay-per-column table so the two relays line up
+// side by side for direct comparison.
+function printComparison(results: { relay: string; stats: Record<string, number | null> }[]): void {
+  const labelW = Math.max("metric".length, ...METRIC_ROWS.map((k) => k.length));
+  const cols = results.map((res) => {
+    const vals = METRIC_ROWS.map((k) => fmtVal(res.stats[k]));
+    return { head: res.relay, vals, width: Math.max(res.relay.length, ...vals.map((v) => v.length)) };
+  });
+  const row = (label: string, cells: string[]) =>
+    label.padEnd(labelW) + cols.map((c, i) => "  " + cells[i].padStart(c.width)).join("");
+
+  console.log("\n=== relay comparison ===");
+  console.log(row("metric", cols.map((c) => c.head)));
+  METRIC_ROWS.forEach((k, ri) => console.log(row(k, cols.map((c) => c.vals[ri]))));
 }
 
 export function benchmarkRelays(targets: Target[]): Script {
@@ -177,8 +232,7 @@ export function benchmarkRelays(targets: Target[]): Script {
       console.log(`\n──── ${t.name} ────`);
       results.push(await measureOneRelay(t));
     }
-    console.log("\n=== relay comparison ===");
-    for (const res of results) console.log(`${res.relay}:`, JSON.stringify(res.stats));
+    printComparison(results);
 
     // The benchmark is a job, not a standing devnet — tear down the parent's own
     // dozzle so the next `decker up relay-bench` doesn't collide on it.
