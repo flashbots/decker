@@ -2,6 +2,13 @@ import type { ContainerDef, ContainerResult, Ctx, HostCtx, ProcessDef, ProcessRe
 
 const DEFAULT_HTTP_PORT = 8745;
 
+// BLS pubkey (G1, 48 bytes) of relay_secret_key below — the builder identity the
+// relay sees on submitBlock. Relays mark THIS pubkey optimistic to enable the
+// fast path. (Derived from the secret key; the devnet reuses validator-0's BLS
+// key, so it coincides with the sole proposer's pubkey.)
+export const RELAY_BUILDER_PUBKEY =
+  "0xa99a76ed7796f7be22d5b7e85deeb7c5677e88e511e0b337618f8c4eb61349b4bf2d153f649f7b53359fe8b94a38e44c";
+
 export const ports = {
   http: { port: DEFAULT_HTTP_PORT, protocol: "TCP" as const, service: false },
   // Telemetry servers (see rbuilderConfigFor): redacted = http+1, full = http+2.

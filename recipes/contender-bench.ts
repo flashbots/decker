@@ -11,7 +11,7 @@ import type { Recipe } from "../utils/types.ts";
 // No `artifacts`: contender is a pure client and consumes none, so up() skips
 // generation entirely.
 export function contenderBench(
-  opts: { rpcUrl: string; txsUrl?: string; duration?: number; privKey?: string },
+  opts: { rpcUrl: string; txsUrl?: string; duration?: number; privKey?: string; tps?: number; scenario?: string },
 ): Recipe {
   return {
     pods: [
@@ -24,6 +24,8 @@ export function contenderBench(
             config: {
               rpcUrl: opts.rpcUrl,
               duration: opts.duration ?? 30,
+              ...(opts.tps ? { tps: opts.tps } : {}),
+              ...(opts.scenario ? { scenario: opts.scenario } : {}),
               ...(opts.txsUrl ? { txsUrl: opts.txsUrl } : {}),
               ...(opts.privKey ? { privKey: opts.privKey } : {}),
             },

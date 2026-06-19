@@ -1,15 +1,11 @@
 import type { Recipe } from "../utils/types.ts";
-import { benchmarkRelays } from "../scripts/relay-bench.ts";
-import { recipe as helix } from "./relay/helix.ts";
-import { recipe as mevBoostRelay } from "./relay/mev-boost-relay.ts";
+import { benchmarkRelays, defaultTargets } from "../scripts/relay-bench.ts";
 
-// Parent: no devnet of its own. Its script brings up each base single-relay
-// recipe in turn, loads it, measures, tears it down, and prints the comparison.
-// `decker up relay-bench` runs the whole thing.
+// Parent: no devnet of its own. Its script benchmarks each relay in both sync and
+// optimistic mode — bringing up a fresh single-relay devnet per (relay, mode),
+// loading the one builder, measuring from the relay's native metrics, tearing it
+// down — then prints the comparison. `decker up relay-bench` runs the whole thing.
 export const recipe: Recipe = {
   pods: [],
-  scripts: [benchmarkRelays([
-    { name: "helix", label: "helix-1", recipe: helix, relayPort: 4040 },
-    { name: "mev-boost-relay", label: "mev-boost-relay-1", recipe: mevBoostRelay, relayPort: 9062 },
-  ])],
+  scripts: [benchmarkRelays(await defaultTargets())],
 };
