@@ -17,81 +17,95 @@ const helixBeaconPorts: Ports = {
   quic:      { port: 19100, protocol: "UDP", service: false },
 };
 
-export const recipe: Recipe = {
-  artifacts: { generator: "l1", fork: "fulu" },
-  pods: [
-    {
-      name: "el-1",
-      shareProcessNamespace: true,
-      containers: [
-        { name: "el-1", prototype: "reth" },
-        { name: "rbuilder-1", prototype: "rbuilder", refs: { el: "el-1", beacon: "beacon-1", relay: "helix-1" } },
-      ],
-    },
-    {
-      name: "beacon-1",
-      containers: [
-        {
-          name: "beacon-1",
-          prototype: "lighthouse-beacon",
-          refs: { el: "el-1", builder: "mev-boost-1" },
-          config: { peers: ["helix-beacon-1"] },
-        },
-      ],
-    },
-    {
-      name: "validator-1",
-      containers: [{ name: "validator-1", prototype: "lighthouse-validator", refs: { beacon: "beacon-1" } }],
-    },
-    {
-      name: "mev-boost-1",
-      containers: [
-        {
-          name: "mev-boost-1",
-          prototype: "mev-boost",
-          config: { relays: [{ name: "helix-1", pubkey: HELIX_RELAY_PUBKEY }] },
-        },
-      ],
-    },
-    {
-      name: "helix-sim-1",
-      containers: [{ name: "helix-sim-1", prototype: "helix-simulator" }],
-    },
-    {
-      name: "helix-beacon-1",
-      containers: [
-        {
-          name: "helix-beacon-1",
-          prototype: "lighthouse-beacon",
-          refs: { el: "helix-sim-1" },
-          config: { ports: helixBeaconPorts, peers: ["beacon-1"] },
-        },
-      ],
-    },
-    {
-      name: "helix-1",
-      containers: [
-        { name: "postgres-1", prototype: "helix-postgres" },
-        { name: "helix-1", prototype: "helix", refs: { beacon: "helix-beacon-1", sim: "helix-sim-1" } },
-      ],
-    },
-    {
-      name: "prometheus-1",
-      containers: [{
+// `optimistic` marks the rbuilder optimistic on helix (fast path: accept before
+// sim). header_delay is forced off so getHeader measures raw serve latency, not
+// helix's policy delay — a bench normalization. prometheus scrapes helix's own
+// metrics (helix-1:metrics) on top of the rbuilder/mev-boost cross-checks.
+export function helixRecipe(opts: { optimistic?: boolean } = {}): Recipe {
+  return {
+    artifacts: { generator: "l1", fork: "fulu" },
+    pods: [
+      {
+        name: "el-1",
+        shareProcessNamespace: true,
+        containers: [
+          { name: "el-1", prototype: "reth" },
+          { name: "rbuilder-1", prototype: "rbuilder", refs: { el: "el-1", beacon: "beacon-1", relay: "helix-1" } },
+        ],
+      },
+      {
+        name: "beacon-1",
+        containers: [
+          {
+            name: "beacon-1",
+            prototype: "lighthouse-beacon",
+            refs: { el: "el-1", builder: "mev-boost-1" },
+            config: { peers: ["helix-beacon-1"] },
+          },
+        ],
+      },
+      {
+        name: "validator-1",
+        containers: [{ name: "validator-1", prototype: "lighthouse-validator", refs: { beacon: "beacon-1" } }],
+      },
+      {
+        name: "mev-boost-1",
+        containers: [
+          {
+            name: "mev-boost-1",
+            prototype: "mev-boost",
+            config: { relays: [{ name: "helix-1", pubkey: HELIX_RELAY_PUBKEY }] },
+          },
+        ],
+      },
+      {
+        name: "helix-sim-1",
+        containers: [{ name: "helix-sim-1", prototype: "helix-simulator" }],
+      },
+      {
+        name: "helix-beacon-1",
+        containers: [
+          {
+            name: "helix-beacon-1",
+            prototype: "lighthouse-beacon",
+            refs: { el: "helix-sim-1" },
+            config: { ports: helixBeaconPorts, peers: ["beacon-1"] },
+          },
+        ],
+      },
+      {
+        name: "helix-1",
+        containers: [
+          { name: "postgres-1", prototype: "helix-postgres" },
+          {
+            name: "helix-1",
+            prototype: "helix",
+            refs: { beacon: "helix-beacon-1", sim: "helix-sim-1" },
+            config: { optimistic: opts.optimistic ?? false, headerDelay: false },
+          },
+        ],
+      },
+      {
         name: "prometheus-1",
-        prototype: "prometheus",
-        config: {
-          scrape: [
-            { job: "rbuilder-1", ref: "rbuilder-1", port: "full_telemetry", path: "/debug/metrics/prometheus" },
-            { job: "mev-boost", ref: "mev-boost-1", port: "metrics" },
-          ],
-        },
-      }],
-    },
-    { name: "grafana-renderer-1", containers: [{ name: "grafana-renderer-1", prototype: "grafana-renderer" }] },
-    {
-      name: "grafana-1",
-      containers: [{ name: "grafana-1", prototype: "grafana", refs: { prometheus: "prometheus-1", renderer: "grafana-renderer-1" } }],
-    },
-  ],
-};
+        containers: [{
+          name: "prometheus-1",
+          prototype: "prometheus",
+          config: {
+            scrape: [
+              { job: "helix", ref: "helix-1", port: "metrics" },
+              { job: "rbuilder-1", ref: "rbuilder-1", port: "full_telemetry", path: "/debug/metrics/prometheus" },
+              { job: "mev-boost", ref: "mev-boost-1", port: "metrics" },
+            ],
+          },
+        }],
+      },
+      { name: "grafana-renderer-1", containers: [{ name: "grafana-renderer-1", prototype: "grafana-renderer" }] },
+      {
+        name: "grafana-1",
+        containers: [{ name: "grafana-1", prototype: "grafana", refs: { prometheus: "prometheus-1", renderer: "grafana-renderer-1" } }],
+      },
+    ],
+  };
+}
+
+export const recipe = helixRecipe();
