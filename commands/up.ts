@@ -2,6 +2,7 @@ import { Command } from "jsr:@cliffy/command@^1.0.0-rc.7";
 import { isAbsolute, join, toFileUrl } from "jsr:@std/path@^1.0.0";
 import { generateArtifacts, loadRecipe, missingBinaries } from "../utils/build.ts";
 import { cleanRuntime, emit } from "../utils/emit.ts";
+import { ensureBinaries } from "../utils/binary-build.ts";
 import { ensureImages } from "../utils/image-build.ts";
 import { DEFAULT_MANIFEST, ensureClone, loadManifest } from "../utils/manifest.ts";
 import { dim, done, fail, note, red, rule, step, summary } from "../utils/term.ts";
@@ -118,7 +119,9 @@ export async function upRecipe(
   paths = emitted.paths;
   done(sEmit, renderers.map((r) => r.name).join(" + "));
 
-  const missing = missingBinaries(emitted.binaries);
+  // Binaries built from source (binaryBuilds) are produced below, so they are
+  // not expected to exist yet — only check the unmanaged ones.
+  const missing = missingBinaries(emitted.binaries.filter((b) => !emitted.binaryBuilds.has(b)));
   if (missing.length > 0) {
     console.error("");
     console.error(red("✗ host binaries not found:"));
@@ -126,6 +129,22 @@ export async function upRecipe(
     console.error("");
     console.error(`  ${dim("place them in ./bin/, set 'binary' in the recipe, or install on PATH")}`);
     return { code: 1, renderers, paths };
+  }
+
+  if (emitted.binaryBuilds.size > 0) {
+    rule("binaries");
+    const t = performance.now();
+    try {
+      const built = await ensureBinaries(emitted.binaryBuilds);
+      const skipped = emitted.binaryBuilds.size - built.length;
+      const extra = built.length > 0
+        ? `built ${built.length}${skipped > 0 ? `, cached ${skipped}` : ""}`
+        : `cached ${skipped}`;
+      note("✓", `binaries ready ${dim(`(${extra})`)}`, t);
+    } catch (e) {
+      console.error(red(`✗ binary build failed: ${(e as Error).message}`));
+      return { code: 1, renderers, paths };
+    }
   }
 
   if (imageBuilds.size > 0) {

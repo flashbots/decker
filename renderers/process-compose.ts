@@ -1,6 +1,7 @@
 import { stringify } from "jsr:@std/yaml@^1.0.5";
 import { lookup, makeHostCtx } from "../utils/resolve.ts";
 import type {
+  BinaryBuildSpec,
   ProcessSpec,
   Recipe,
   RenderCtx,
@@ -34,13 +35,18 @@ function build(recipe: Recipe, ctx: RenderCtx): RenderResult {
   const procs: Record<string, unknown> = {};
   const files: RenderResult["files"] = [];
   const binaries: string[] = [];
+  const binaryBuilds = new Map<string, BinaryBuildSpec>();
   for (const def of processes) {
     const proto = lookup(def.prototype);
     if (!proto.buildProcess) {
       throw new Error(`process ${def.name} has no buildProcess()`);
     }
     const built = proto.buildProcess(def, hostCtx);
-    if (built.process.command.length > 0) binaries.push(built.process.command[0]);
+    const bin = built.process.command[0];
+    if (bin) {
+      binaries.push(bin);
+      if (built.binaryBuild) binaryBuilds.set(bin, built.binaryBuild);
+    }
     procs[def.name] = procEntry(built.process);
     for (const cf of built.configs ?? []) {
       files.push({
@@ -55,7 +61,7 @@ function build(recipe: Recipe, ctx: RenderCtx): RenderResult {
     content: stringify({ version: "0.5", processes: procs }, yamlOpts),
   });
 
-  return { files, binaries };
+  return { files, binaries, binaryBuilds };
 }
 
 async function start(paths: RendererPaths): Promise<number> {
