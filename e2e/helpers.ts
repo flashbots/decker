@@ -44,11 +44,29 @@ export async function withTmp(fn: (dir: string) => Promise<void>): Promise<void>
   }
 }
 
+// Ref to pin in test manifests. CI isn't always on `main` (feature-branch and
+// detached-HEAD PR builds are common), so resolve REPO_ROOT's real state: its
+// branch if checked out on one, else the HEAD commit. Both resolve in the clone
+// — a branch via origin/<branch>, a SHA directly (a local-path clone copies the
+// full object store, so even a detached commit is present).
+async function repoRef(): Promise<string> {
+  const git = async (...args: string[]): Promise<string> => {
+    const { code, stdout } = await new Deno.Command("git", {
+      args: ["-C", REPO_ROOT, ...args],
+      stdout: "piped",
+      stderr: "null",
+    }).output();
+    return code === 0 ? new TextDecoder().decode(stdout).trim() : "";
+  };
+  return (await git("branch", "--show-current")) || (await git("rev-parse", "HEAD")) || "main";
+}
+
 // A decker.ts manifest pinned at the local checkout, so pull/auto-pull e2e runs
 // offline and fast instead of hitting GitHub.
 export async function writeLocalManifest(dir: string, recipe = "l1"): Promise<void> {
+  const ref = await repoRef();
   const body = `type P = { decker: { source: string; ref: string; into?: string }; recipe: string };
-export const project: P = { decker: { source: ${JSON.stringify(REPO_ROOT)}, ref: "main", into: ".decker" }, recipe: ${JSON.stringify(recipe)} };
+export const project: P = { decker: { source: ${JSON.stringify(REPO_ROOT)}, ref: ${JSON.stringify(ref)}, into: ".decker" }, recipe: ${JSON.stringify(recipe)} };
 `;
   await Deno.writeTextFile(join(dir, "decker.ts"), body);
 }
