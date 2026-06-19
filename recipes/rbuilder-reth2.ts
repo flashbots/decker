@@ -8,7 +8,7 @@ import { relayWarmup } from "../scripts/relay-warmup.ts";
 // (see containers/reth-rbuilder.ts and utils/binary-build.ts). The first run
 // triggers a full cargo build; the binary is then cached under cache/bins/.
 export const recipe: Recipe = {
-  artifacts: { generator: "l1", fork: "electra" },
+  artifacts: { generator: "l1", fork: "fulu" },
   scripts: [
     relayWarmup({
       relays: [{ container: "mev-boost-relay-1" }],
