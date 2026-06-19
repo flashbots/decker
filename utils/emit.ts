@@ -1,6 +1,6 @@
 import { dirname, isAbsolute } from "jsr:@std/path@^1.0.0";
 import { rendererFor } from "./renderers.ts";
-import type { ImageBuildSpec, Recipe, Renderer, RendererPaths } from "./types.ts";
+import type { BinaryBuildSpec, ImageBuildSpec, Recipe, Renderer, RendererPaths } from "./types.ts";
 
 import { DECKER_ROOT } from "./root.ts";
 const RUNTIME_DIR = `${DECKER_ROOT}/runtime`;
@@ -30,6 +30,7 @@ function validate(recipe: Recipe) {
 export type EmitResult = {
   binaries: string[];
   imageBuilds: Map<string, ImageBuildSpec>;
+  binaryBuilds: Map<string, BinaryBuildSpec>;
   selected: Renderer[];
   paths: RendererPaths;
 };
@@ -58,6 +59,7 @@ export async function emit(
   await Deno.mkdir(manifestDir, { recursive: true });
 
   const imageBuilds = new Map<string, ImageBuildSpec>();
+  const binaryBuilds = new Map<string, BinaryBuildSpec>();
   const binaries: string[] = [];
   for (const r of selected) {
     const out = r.render(recipe, ctx);
@@ -78,11 +80,26 @@ export async function emit(
         }
       }
     }
+    if (out.binaryBuilds) {
+      for (const [path, spec] of out.binaryBuilds) {
+        const existing = binaryBuilds.get(path);
+        if (existing) {
+          if (
+            existing.repo !== spec.repo || existing.ref !== spec.ref ||
+            existing.cmd !== spec.cmd || existing.artifact !== spec.artifact
+          ) {
+            throw new Error(`binary ${path} produced by conflicting BinaryBuildSpec`);
+          }
+        } else {
+          binaryBuilds.set(path, spec);
+        }
+      }
+    }
     if (out.binaries) binaries.push(...out.binaries);
   }
 
   await materializeRuntime(manifestDir, runtimeDir);
-  return { binaries, imageBuilds, selected, paths: { runtimeDir, manifestDir } };
+  return { binaries, imageBuilds, binaryBuilds, selected, paths: { runtimeDir, manifestDir } };
 }
 
 // Callers run this before generating artifacts, so the dir is empty when

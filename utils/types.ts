@@ -37,6 +37,16 @@ export type ImageBuildSpec = {
   cmd: string;
 };
 
+// A host binary built from a git source, the process-side analogue of
+// ImageBuildSpec. `cmd` runs in the clone root; `artifact` is the built
+// binary's path within the clone (e.g. "target/release/reth-rbuilder").
+export type BinaryBuildSpec = {
+  repo: string;
+  ref: string;
+  cmd: string;
+  artifact: string;
+};
+
 export type ImageEngine = "podman" | "docker";
 
 export type Container = {
@@ -76,6 +86,9 @@ export type ProcessSpec = {
 export type ProcessResult = {
   process: ProcessSpec;
   configs?: { filename: string; content: string }[];
+  // Build this process's binary from source. When set, command[0] must be the
+  // path that binaryBuildPath(binaryBuild) resolves to.
+  binaryBuild?: BinaryBuildSpec;
 };
 
 // A ContainerDef is a recipe-level instance of a prototype placed under a Pod.
@@ -163,6 +176,7 @@ export type RenderedFile = {
 export type RenderResult = {
   files: RenderedFile[];
   imageBuilds?: Map<string, ImageBuildSpec>;
+  binaryBuilds?: Map<string, BinaryBuildSpec>;
   binaries?: string[];
 };
 

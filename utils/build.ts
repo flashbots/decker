@@ -50,10 +50,12 @@ export async function generateArtifacts(recipe: Recipe): Promise<void> {
   await mod.generate({ outDir: out, ...spec });
 }
 
-export async function buildOne(target: string): Promise<{ name: string; binaries: string[] }> {
+export async function buildOne(
+  target: string,
+): Promise<{ name: string; binaries: string[]; binaryBuilds: string[] }> {
   const { name, recipe } = await loadRecipe(target);
-  const { binaries } = await emit(name, recipe);
-  return { name, binaries };
+  const { binaries, binaryBuilds } = await emit(name, recipe);
+  return { name, binaries, binaryBuilds: [...binaryBuilds.keys()] };
 }
 
 export function missingBinaries(binaries: string[]): string[] {

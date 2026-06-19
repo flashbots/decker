@@ -30,11 +30,16 @@ export const command = new Command()
       }
       done(sArt, recipe.artifacts ? `${recipe.artifacts.generator}/${recipe.artifacts.fork}` : "no artifacts");
       const sp = step(`rendering ${r}`);
-      const { name, binaries } = await buildOne(r);
+      const { name, binaries, binaryBuilds } = await buildOne(r);
       done(sp, `manifests/${name}/`);
-      const missing = missingBinaries(binaries);
+      // Binaries built from source land at `up` time; don't flag them missing here.
+      const managed = new Set(binaryBuilds);
+      const missing = missingBinaries(binaries.filter((b) => !managed.has(b)));
       if (missing.length > 0) {
         console.log(`  ${warn("!")} host binaries not found: ${missing.join(", ")}`);
+      }
+      if (binaryBuilds.length > 0) {
+        console.log(`  ${warn("!")} binaries built from source on 'up': ${binaryBuilds.length}`);
       }
     }
   });

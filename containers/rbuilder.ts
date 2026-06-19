@@ -10,7 +10,7 @@ export const ports = {
   full_telemetry: { port: DEFAULT_HTTP_PORT + 2, protocol: "TCP" as const, service: false },
 };
 
-const rbuilderConfigFor = (
+export const rbuilderConfigFor = (
   name: string,
   chainPath: string,
   rethDatadir: string,
