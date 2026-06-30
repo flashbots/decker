@@ -31,7 +31,7 @@ type HelixYamlOpts = {
   tcpPort: number;
   headerDelay: boolean;
   optimistic: boolean;
-  builderPubkey: string;
+  builderPubkeys: string[];
   collateral: string;
   coreCount: number;
 };
@@ -73,17 +73,19 @@ function helixCoresYaml(coreCount: number): string {
   data_gatherer: 0`;
 }
 
-// Register the builder in both modes so the comparison is a known builder either
-// way; is_optimistic toggles the path: false = pessimistic (wait on sim), true =
-// fast path (accept before sim). An unregistered builder is a different scenario,
-// not the sync baseline we want.
+// Register every builder (one entry per pubkey) so each is a known builder;
+// is_optimistic toggles the path: false = pessimistic (wait on sim), true = fast
+// path (accept before sim). Multi-builder runs pass several pubkeys here so the
+// auctioneer's bid sorter actually tracks N distinct builders.
 function buildersBlock(o: HelixYamlOpts): string {
-  return `builders:
-  - pub_key: "${o.builderPubkey}"
+  const entries = o.builderPubkeys.map((pk) =>
+    `  - pub_key: "${pk}"
     builder_info:
       collateral: "${o.collateral}"
       is_optimistic: ${o.optimistic}
-      is_optimistic_for_regional_filtering: false`;
+      is_optimistic_for_regional_filtering: false`
+  ).join("\n");
+  return `builders:\n${entries}`;
 }
 
 function helixYaml(o: HelixYamlOpts): string {
@@ -140,7 +142,7 @@ export function buildContainer(def: ContainerDef, ctx: Ctx): ContainerResult {
   // off measures raw getHeader serve latency (defaults preserve standalone behaviour).
   const optimistic = (def.config?.optimistic as boolean | undefined) ?? false;
   const headerDelay = (def.config?.headerDelay as boolean | undefined) ?? true;
-  const builderPubkey = (def.config?.builderPubkey as string | undefined) ?? RELAY_BUILDER_PUBKEY;
+  const builderPubkeys = (def.config?.builderPubkeys as string[] | undefined) ?? [RELAY_BUILDER_PUBKEY];
   const collateral = (def.config?.collateral as string | undefined) ?? DEFAULT_COLLATERAL;
   // Distribute helix's tiles across the host's CPUs (override with config.coreCount).
   const coreCount = (def.config?.coreCount as number | undefined) ?? navigator.hardwareConcurrency;
@@ -173,7 +175,7 @@ export function buildContainer(def: ContainerDef, ctx: Ctx): ContainerResult {
           tcpPort,
           headerDelay,
           optimistic,
-          builderPubkey,
+          builderPubkeys,
           collateral,
           coreCount,
         }),

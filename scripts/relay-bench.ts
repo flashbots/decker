@@ -1,61 +1,97 @@
-// Relay performance benchmark. For each relay × {sync, optimistic} it brings up a
-// fresh isolated devnet, loads the one builder, and measures the relay from its
-// OWN native metrics (helix:9500 / mev-boost-relay:9062/metrics) — relay-internal
-// processing, not the builder's round-trip. The four axes: submitBlock ingest
-// latency (p50), tail (p99), throughput (subs/s), and getHeader serve latency
-// (client-side, header_delay normalized off). The optimistic→sync delta per relay
-// is the value prop: with sim off the critical path, ingest latency should
-// collapse. Driven by recipes/relay-bench.ts.
+// Relay performance benchmark: helix vs mev-boost-relay.
+//
+// For every (relay × MODE × VARIANT) cell it boots a fresh isolated devnet and measures two
+// axes CLIENT-SIDE, with the same clock for both relays:
+//   • submit delay  — the relay spammer times each submitBlock POST→response (avg/p50/p99 RTT)
+//   • getHeader     — a client hammer times getHeader (p50/p99)
+// The spammer is the ONLY submission source, so submit RTT is a pure client→relay roundtrip.
+//
+// Each relay's native metrics are also scraped as a SUPPLEMENTARY decomposition (helix's
+// request_latency; mev-boost-relay's per-phase histograms) to show WHERE the roundtrip goes —
+// but the headline is always the RTT. Driven by recipes/relay-bench.ts.
 
 import { down } from "../commands/down.ts";
 import { upRecipe } from "../commands/up.ts";
-import { contenderBench } from "../recipes/contender-bench.ts";
-import { RELAY_BUILDER_PUBKEY } from "../containers/rbuilder.ts";
+import { BUILDER_KEYS } from "../containers/rbuilder.ts";
+import { spamRelay } from "./relay-spammer.ts";
 import type { Recipe, Script } from "../utils/types.ts";
 
-type Mode = "sync" | "optimistic";
+// ═══════════════════════════════════════ types ═══════════════════════════════════════
 
 type Stats = Record<string, number | null>;
+type RecipeOpts = { optimistic: boolean; ssz: boolean; builders: number; realSim?: boolean };
 
-// One relay under test. `makeRecipe(optimistic)` builds its single-relay devnet;
-// `stats`/`submitCountExpr`/`optimisticEngagedExpr` are relay-specific because
-// helix and mev-boost-relay expose entirely different native metric names.
-// `prepareOptimistic` is the runtime enable step (mev-boost-relay only — helix
-// enables optimistic at config time via the recipe).
+// synchronous = the relay simulates before responding (sim on the bid path).
+// optimistic  = the relay responds first, with simulation off the bid path.
+type Mode = "synchronous" | "optimistic";
+
+// One workload applied to every cell. The spammer drives load: txsPerBlock = forged block
+// size, perSlot = submissions fired per slot.
+type Variant = { name: string; txsPerBlock: number; perSlot?: number };
+
+// One relay under test. `stats` and `optimisticEngagedExpr` are relay-specific because helix
+// and mev-boost-relay expose entirely different native metrics. `prepareOptimistic` is a
+// runtime optimistic-enable (mev-boost-relay only; helix enables it via the recipe).
 type Target = {
   name: string;
   label: string;
   relayPort: number;
-  makeRecipe: (optimistic: boolean) => Recipe;
-  stats: (mode: Mode, startSec: number, endSec: number) => Promise<Stats>;
-  submitCountExpr: (mode: Mode) => string;
+  beaconUrl: string; // beacon the spammer reads payload_attributes from (this relay's chain view)
+  makeRecipe: (opts: RecipeOpts) => Recipe;
+  stats: (endSec: number, optimistic: boolean) => Promise<Stats>;
   optimisticEngagedExpr: string;
-  prepareOptimistic?: (relayBase: string, deadlineMs: number) => Promise<boolean>;
+  prepareOptimistic?: (relayBase: string, pubkeys: string[], deadlineMs: number) => Promise<boolean>;
 };
 
+// ══════════════════════════════════════ config ══════════════════════════════════════
+// The matrix to run, plus the simulator toggle — the knobs you actually touch.
+
+// Which modes to benchmark; list both for the full 2×2.
+const MODES: Mode[] = ["synchronous", "optimistic"];
+
+// false = mock simulator (instant, always-valid): isolates relay overhead, reproducible, and
+// lets the spammer's forged blocks through. true = real sim (el-1 / helix-sim-1): adds each
+// relay's real validation cost, but REJECTS the spammer's forged blocks (see measureOne).
+const REAL_SIM = false;
+
+const VARIANTS: Variant[] = [
+  { name: "200tx", txsPerBlock: 200, perSlot: 50 },
+];
+
+// How long to spam per cell (dense enough for a stable RTT distribution).
+const WINDOW_SECONDS = 60;
+
+// ── fixed devnet facts: host ports the recipes expose, and the single proposer ──
 const DECKER_ROOT = new URL("../", import.meta.url).pathname.replace(/\/$/, "");
 const PROM = "http://localhost:9009";
-const EL_RPC = "http://localhost:8545";
-const BEACON = "http://localhost:3500";
-// Measurement window once submits are flowing in the target mode. The one builder
-// submits only ~1–2×/slot, so the window is long enough to gather a usable sample
-// for p50 (tails stay sample-limited — see the plan's single-builder caveat).
-const WINDOW_SECONDS = 90;
-// With txsUrl feeding the builder directly (see measureOne), the builder resubmits
-// on incoming orders, so even a low TPS yields a dense, steady stream of accepted
-// submissions (~9/s at tps 20). Higher TPS just floods the relay into 400/500s and
-// stalls it — tps 20 stays dense and clean.
-const LOAD_TPS = 20;
-// Prefunded anvil account #4 — each relay gets a fresh devnet, so it starts clean.
-const FUNDER = "0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a";
-// The single devnet validator's pubkey — the proposer for every slot.
+const EL_RPC = "http://localhost:8545"; // el-1, shared by both relays' builders
+const CHAIN_BEACON = "http://localhost:3500"; // beacon-1 — canonical chain head for the getHeader hammer
 const PROPOSER_PUBKEY =
   "0xa99a76ed7796f7be22d5b7e85deeb7c5677e88e511e0b337618f8c4eb61349b4bf2d153f649f7b53359fe8b94a38e44c";
-// 1e24 wei (1M ETH) — clears any devnet bid value for optimistic collateral.
-const BIG_COLLATERAL = "1000000000000000000000000";
+const BIG_COLLATERAL = "1000000000000000000000000"; // 1M ETH — clears any devnet bid for optimistic collateral
+
+// ══════════════════════════════════════ helpers ══════════════════════════════════════
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const round3 = (v: number | null) => (v == null ? null : Math.round(v * 1000) / 1000);
+const fromHex = (h: string) => Uint8Array.from(h.replace(/^0x/, "").match(/../g)!.map((b) => parseInt(b, 16)));
+
+function pct(arr: number[], p: number): number | null {
+  if (arr.length === 0) return null;
+  const s = [...arr].sort((a, b) => a - b);
+  return Math.round(s[Math.min(s.length - 1, Math.floor(s.length * p))] * 10) / 10;
+}
+
+// The spammer submits as a single builder. With builders:0 the recipe configures exactly one
+// builder pubkey (helix via Math.max(builders,1); mev-boost-relay registers it on first submit).
+const SPAM_KEYS = BUILDER_KEYS.slice(0, 1).map((k) => ({ priv: k.key, pub: k.pubkey }));
+
+function genesisForkVersion(): Uint8Array {
+  const txt = Deno.readTextFileSync(`${DECKER_ROOT}/runtime/artifacts/testnet/config.yaml`);
+  return fromHex(txt.match(/GENESIS_FORK_VERSION:\s*(0x[0-9a-fA-F]+)/)![1]);
+}
+
+// ════════════════════════════════ devnet readiness ════════════════════════════════
 
 async function blockNumber(): Promise<number> {
   const r = await fetch(EL_RPC, {
@@ -66,6 +102,7 @@ async function blockNumber(): Promise<number> {
   return parseInt((await r.json()).result, 16);
 }
 
+// Resolve once the chain is producing blocks.
 async function waitForLive(deadlineMs: number): Promise<void> {
   let last = -1;
   while (Date.now() < deadlineMs) {
@@ -77,32 +114,27 @@ async function waitForLive(deadlineMs: number): Promise<void> {
   throw new Error("relay-bench: chain not producing before deadline");
 }
 
-async function prom(expr: string, atSec: number): Promise<number | null> {
-  const u = new URL(`${PROM}/api/v1/query`);
-  u.searchParams.set("query", expr);
-  u.searchParams.set("time", String(atSec));
-  const r = await fetch(u).catch(() => null);
-  if (!r || !r.ok) return null;
-  const v = (await r.json())?.data?.result?.[0]?.value?.[1];
-  return v == null ? null : Number(v);
-}
-
-// Wait until a counter expr is present and > 0 (the relay's fresh prometheus has
-// scraped the submit series in this mode), so window-scoped queries aren't read
-// before the data exists. Returns whether it appeared.
-async function waitForExpr(expr: string, deadlineMs: number): Promise<boolean> {
+// Resolve once the relay knows its proposer duties (so the spammer can build valid submissions).
+async function dutiesReady(relayBase: string, deadlineMs: number): Promise<void> {
   while (Date.now() < deadlineMs) {
-    const n = await prom(expr, Date.now() / 1000);
-    if (n != null && n > 0) return true;
-    await sleep(2000);
+    const r = await fetch(`${relayBase}/relay/v1/builder/validators`).catch(() => null);
+    if (r?.ok) {
+      const a = await r.json().catch(() => []);
+      if (Array.isArray(a) && a.length) return;
+    }
+    await sleep(3000);
   }
-  return false;
+  throw new Error("relay-bench: builder duties not ready before deadline");
 }
 
-// --- getHeader serve, measured client-side so it's identical for both relays ---
+// ════════════════════════════ getHeader serve (client hammer) ════════════════════════════
+// Hammer the relay's getHeader (slot+1 on the chain head) and time each 200 client-side.
+// header_delay is off in the recipe, so this is raw serve latency. Dense enough (~1/40ms) for
+// well-sampled p50/p99 regardless of submit rate.
+
 async function headSlot(): Promise<number | null> {
-  const r = await fetch(`${BEACON}/eth/v1/beacon/headers/head`).catch(() => null);
-  if (!r || !r.ok) return null;
+  const r = await fetch(`${CHAIN_BEACON}/eth/v1/beacon/headers/head`).catch(() => null);
+  if (!r?.ok) return null;
   const s = (await r.json())?.data?.header?.message?.slot;
   return s == null ? null : Number(s);
 }
@@ -113,13 +145,10 @@ async function headHash(): Promise<string | null> {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_getBlockByNumber", params: ["latest", false] }),
   }).catch(() => null);
-  if (!r || !r.ok) return null;
+  if (!r?.ok) return null;
   return (await r.json())?.result?.hash ?? null;
 }
 
-// Hammer the relay's getHeader directly (slot+1 on the head, proposer pubkey),
-// timing each 200 client-side. header_delay is off (recipe), so this is raw serve
-// latency. Dense (~1/40ms) so p50/p99 are well-sampled regardless of submit rate.
 async function hammerReads(relayPort: number, deadlineMs: number): Promise<number[]> {
   const out: number[] = [];
   let slot = 0;
@@ -148,30 +177,21 @@ async function hammerReads(relayPort: number, deadlineMs: number): Promise<numbe
   return out;
 }
 
-function pct(arr: number[], p: number): number | null {
-  if (arr.length === 0) return null;
-  const s = [...arr].sort((a, b) => a - b);
-  return Math.round(s[Math.min(s.length - 1, Math.floor(s.length * p))] * 10) / 10;
+// ══════════════════════ SUPPLEMENTARY: native-metric decomposition ══════════════════════
+// Scraped from each relay's own prometheus to show WHERE the roundtrip goes. Not the headline.
+
+async function prom(expr: string, atSec: number): Promise<number | null> {
+  const u = new URL(`${PROM}/api/v1/query`);
+  u.searchParams.set("query", expr);
+  u.searchParams.set("time", String(atSec));
+  const r = await fetch(u).catch(() => null);
+  if (!r?.ok) return null;
+  const v = (await r.json())?.data?.result?.[0]?.value?.[1];
+  return v == null ? null : Number(v);
 }
 
-// --- native-metric query helpers ---
-// Build a series selector. mev-boost-relay's OTEL namespace keeps a hyphen
-// ("mev-boost-relay_…"), which isn't a legal bare PromQL metric name, so such
-// names must go through the {__name__="…"} form (prometheus 3 UTF-8 names).
-function sel(name: string, labels?: string): string {
-  if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) return labels ? `${name}{${labels}}` : name;
-  return `{__name__=${JSON.stringify(name)}${labels ? `,${labels}` : ""}}`;
-}
-
-// Each devnet boots fresh, so the CUMULATIVE histogram since boot is exactly this
-// run's distribution — no rate/window, which is what made sparse single-builder
-// submits read as spurious nulls. scale converts the histogram's unit to ms
-// (helix is seconds → 1000, mev-boost-relay is already milliseconds → 1).
-async function quant(bucketSel: string, p: number, atSec: number, scale: number): Promise<number | null> {
-  const v = await prom(`histogram_quantile(${p}, sum(${bucketSel}) by (le))`, atSec);
-  return v == null || !isFinite(v) ? null : round3(v * scale);
-}
-
+// Each devnet is fresh, so a histogram's cumulative sum/count since boot IS this run's
+// distribution. avg = (sum/count)·scale converts to ms (helix is seconds → 1000; mbr is ms → 1).
 async function avg(sumSel: string, countSel: string, atSec: number, scale: number): Promise<number | null> {
   const s = await prom(`sum(${sumSel})`, atSec);
   const c = await prom(`sum(${countSel})`, atSec);
@@ -179,145 +199,178 @@ async function avg(sumSel: string, countSel: string, atSec: number, scale: numbe
   return round3((s / c) * scale);
 }
 
-async function total(countSel: string, atSec: number): Promise<number | null> {
-  const v = await prom(`sum(${countSel})`, atSec);
-  return v == null ? null : Math.round(v);
+// Plain bare-name PromQL selector (used for helix's clean metric names).
+function sel(name: string, labels?: string): string {
+  return labels ? `${name}{${labels}}` : name;
 }
 
-// --- helix: histograms in SECONDS; submitBlock=/relay/v1/builder/blocks,
-//     getHeader=/eth/v1/builder/header/...; optimistic via is_optimistic label. ---
+// --- helix: request_latency_secs spans handler-start → response. In optimistic mode the
+//     response resolves right at the bid sort (sim/payload-store deferred), so its mean is
+//     bid-available; in synchronous mode it natively includes the sim wait. ---
 const HELIX_SUBMIT = `endpoint="/relay/v1/builder/blocks"`;
-async function helixStats(_mode: Mode, _startSec: number, endSec: number): Promise<Stats> {
-  const at = endSec;
+async function helixStats(endSec: number, _optimistic: boolean): Promise<Stats> {
   return {
-    submit_p50_ms: await quant(sel("helix_request_latency_secs_bucket", HELIX_SUBMIT), 0.5, at, 1000),
-    submit_p99_ms: await quant(sel("helix_request_latency_secs_bucket", HELIX_SUBMIT), 0.99, at, 1000),
-    submit_n: await total(sel("helix_request_latency_secs_count", HELIX_SUBMIT), at),
-    submit_sim_ms: await avg(
-      sel("helix_submission_trace_latency_us_sum", `step="simulation"`),
-      sel("helix_submission_trace_latency_us_count", `step="simulation"`),
-      at,
-      0.001,
+    submit_bidavail_ms: await avg(
+      sel("helix_request_latency_secs_sum", HELIX_SUBMIT),
+      sel("helix_request_latency_secs_count", HELIX_SUBMIT),
+      endSec,
+      1000,
     ),
   };
 }
 
-// --- mev-boost-relay: histograms in MILLISECONDS; submit latency carries an
-//     optimistic="true|false" label (each run is one mode, so filter by it). ---
-const MBR_SUBMIT = "mev-boost-relay_submit_new_block_latency_milliseconds";
-const MBR_SIM = "mev-boost-relay_submit_new_block_simulation_latency_milliseconds";
-async function mbrStats(mode: Mode, _startSec: number, endSec: number): Promise<Stats> {
-  const at = endSec;
-  const optSel = mode === "optimistic" ? `optimistic="true"` : `optimistic="false"`;
+// --- mev-boost-relay: per-phase histograms (ms). MBR_PHASES is the display order; MBR_BIDAVAIL
+//     is the subset whose means sum to "bid-available" (when the bid can win) — sim is added in
+//     synchronous mode. database_save and the total are off the bid path (deferred after the
+//     response is built). The OTEL exporter's metric-name separator varies by version
+//     (mev-boost-relay_ vs mev_boost_relay_), so series are matched by an __name__ regex; the
+//     displayed labels use the canonical underscore form. ---
+const MBR_PHASES = [
+  "submit_new_block_read_latency",
+  "submit_new_block_decode_latency",
+  "submit_new_block_prechecks_latency",
+  "submit_new_block_simulation_latency",
+  "submit_new_block_redis_latency",
+  "submit_new_block_redis_payload_latency",
+  "submit_new_block_redis_top_bid_latency",
+  "submit_new_block_redis_floor_latency",
+  "database_save_latency",
+  "submit_new_block_latency",
+] as const;
+const MBR_BIDAVAIL = [
+  "submit_new_block_read_latency",
+  "submit_new_block_decode_latency",
+  "submit_new_block_prechecks_latency",
+  "submit_new_block_redis_latency",
+];
+const MBR_PHASE_NOTE: Record<string, string> = {
+  submit_new_block_simulation_latency: "sim — on the bid path only in synchronous mode",
+  submit_new_block_redis_payload_latency: "↳ redis sub-phase",
+  submit_new_block_redis_top_bid_latency: "↳ redis sub-phase",
+  submit_new_block_redis_floor_latency: "↳ redis sub-phase",
+  database_save_latency: "deferred postgres write — gates the response (no Flush); off the bid path",
+  submit_new_block_latency: "TOTAL — deferred-recorded; overshoots bid-available",
+};
+
+const mbrName = (base: string) => `mev_boost_relay_${base}_milliseconds`; // canonical display name
+function mbrSel(base: string, suffix: "sum" | "count", labels?: string): string {
+  const pat = `mev.boost.relay_${base}_milliseconds_${suffix}`; // `.` tolerates the -/_ separator
+  return `{__name__=~${JSON.stringify(pat)}${labels ? `,${labels}` : ""}}`;
+}
+const mbrMean = (base: string, atSec: number) => avg(mbrSel(base, "sum"), mbrSel(base, "count"), atSec, 1);
+
+async function mbrStats(endSec: number, optimistic: boolean): Promise<Stats> {
+  const phases: Stats = {};
+  for (const base of MBR_PHASES) phases[mbrName(base)] = await mbrMean(base, endSec);
+
+  // bid-available = read+decode+prechecks+redis, plus the sim wait in synchronous mode.
+  const bidavail = optimistic ? MBR_BIDAVAIL : [...MBR_BIDAVAIL, "submit_new_block_simulation_latency"];
+  const parts = bidavail.map((b) => phases[mbrName(b)]).filter((x): x is number => x != null);
   return {
-    submit_p50_ms: await quant(sel(`${MBR_SUBMIT}_bucket`, optSel), 0.5, at, 1),
-    submit_p99_ms: await quant(sel(`${MBR_SUBMIT}_bucket`, optSel), 0.99, at, 1),
-    submit_n: await total(sel(`${MBR_SUBMIT}_count`, optSel), at),
-    submit_sim_ms: await avg(sel(`${MBR_SIM}_sum`), sel(`${MBR_SIM}_count`), at, 1),
+    submit_bidavail_ms: parts.length ? round3(parts.reduce((a, x) => a + x, 0)) : null,
+    ...phases,
   };
 }
 
-// mev-boost-relay records a builder only after it submits, and reads optimistic
-// status from a per-slot cache rebuilt from the DB. So: wait for the builder to be
-// in the DB, POST high_prio+optimistic+collateral via --internal-api, then wait a
-// couple slots for the cache to pick it up. (helix needs none of this — its
-// builders[] config marks the builder optimistic from boot.)
-async function enableMbrOptimistic(relayBase: string, deadlineMs: number): Promise<boolean> {
-  const pk = RELAY_BUILDER_PUBKEY;
+// ═══════════════════════════ mev-boost-relay optimistic prep ═══════════════════════════
+// mev-boost-relay only treats a builder as optimistic once it's marked via --internal-api, and
+// it only knows a builder after that builder has submitted. So: wait for it to be recorded,
+// POST high-prio + optimistic + collateral, then wait ~2 slots for the per-slot cache to refresh.
+// (helix needs none of this — its builders[] config marks the builder optimistic from boot.)
+async function enableMbrOptimistic(relayBase: string, pubkeys: string[], deadlineMs: number): Promise<boolean> {
   while (Date.now() < deadlineMs) {
-    const r = await fetch(`${relayBase}/internal/v1/builder/${pk}`).catch(() => null);
-    if (r && r.ok) {
+    const r = await fetch(`${relayBase}/internal/v1/builder/${pubkeys[0]}`).catch(() => null);
+    if (r?.ok) {
       const d = await r.json().catch(() => null);
       if (d && Number(d.num_submissions_total ?? 0) > 0) break;
     }
     await sleep(3000);
   }
-  await fetch(`${relayBase}/internal/v1/builder/${pk}?high_prio=true&optimistic=true`, { method: "POST" }).catch(() => {});
-  await fetch(`${relayBase}/internal/v1/builder/collateral/${pk}?collateral=${BIG_COLLATERAL}&value=${BIG_COLLATERAL}`, {
-    method: "POST",
-  }).catch(() => {});
-  await sleep(26000); // ~2 slots for prepareBuildersForSlot to rebuild the cache
+  for (const pk of pubkeys) {
+    await fetch(`${relayBase}/internal/v1/builder/${pk}?high_prio=true&optimistic=true`, { method: "POST" }).catch(() => {});
+    // Collateral via `value` only; leaving `collateral` empty keeps builder_id="", which makes
+    // the relay skip demotion — so the builder stays optimistic under load.
+    await fetch(`${relayBase}/internal/v1/builder/collateral/${pk}?value=${BIG_COLLATERAL}`, { method: "POST" }).catch(() => {});
+  }
+  await sleep(26000); // ~2 slots for the per-slot builder cache to rebuild
   return true;
 }
 
-async function measureOne(t: Target, mode: Mode): Promise<{ col: string; stats: Stats }> {
+// ═══════════════════════════════════ run one cell ═══════════════════════════════════
+
+async function measureOne(t: Target, variant: Variant, mode: Mode): Promise<{ col: string; stats: Stats }> {
   const optimistic = mode === "optimistic";
-  const tag = `${t.name}-${mode}`;
+  const tag = `${t.name}-${mode}-${variant.name}`;
   const devDir = `${DECKER_ROOT}/runtime/runs/${tag}`;
-  const loadDir = `${DECKER_ROOT}/runtime/runs/${tag}-load`;
   const relayBase = `http://localhost:${t.relayPort}`;
 
-  const up = await upRecipe(tag, t.makeRecipe(optimistic), undefined, { attached: true, runtimeDir: devDir });
+  // builders:0 → no rbuilder, so the spammer is the only submission source and submit RTT is
+  // the pure client→relay roundtrip.
+  const up = await upRecipe(tag, t.makeRecipe({ optimistic, ssz: false, builders: 0, realSim: REAL_SIM }), undefined, {
+    attached: true,
+    runtimeDir: devDir,
+  });
   if (up.code !== 0) throw new Error(`${tag}: devnet up failed (${up.code})`);
   await waitForLive(Date.now() + 180_000);
+  await dutiesReady(relayBase, Date.now() + 60_000);
 
-  // Load must cover the optimistic-enable prep (mev-boost-relay: builder-in-DB
-  // wait + cache refresh) plus the whole window, with slack so it can't end mid-window.
-  const needsPrep = optimistic && !!t.prepareOptimistic;
-  const prepBudgetSec = needsPrep ? 45 : 0;
-  const loadDur = (needsPrep ? 100 : 10) + WINDOW_SECONDS;
-  const load = await upRecipe(
-    `${tag}-load`,
-    // txsUrl feeds raw txs straight to the builder's order pool so it builds
-    // non-empty, above-floor blocks and submits to the relay every slot — without
-    // it the builder's blocks are ~empty and the relay accepts almost nothing.
-    contenderBench({
-      rpcUrl: "http://el-1:8545",
-      txsUrl: "http://rbuilder-1:8745",
-      duration: loadDur,
-      privKey: FUNDER,
-      tps: LOAD_TPS,
-    }),
-    undefined,
-    { attached: true, runtimeDir: loadDir },
-  );
-  if (load.code !== 0) throw new Error(`${tag}: load up failed (${load.code})`);
+  const spamOpts = { relayUrl: relayBase, beaconUrl: t.beaconUrl, genesisForkVersion: genesisForkVersion(), builderKeys: SPAM_KEYS };
 
-  if (needsPrep) await t.prepareOptimistic!(relayBase, Date.now() + prepBudgetSec * 1000);
+  // Optimistic mev-boost-relay needs its builder registered first — a short warm-up spam does
+  // that, then prep marks it optimistic.
+  if (optimistic && t.prepareOptimistic) {
+    await spamRelay({ ...spamOpts, perSlot: 20, deadlineMs: Date.now() + 20_000 });
+    await t.prepareOptimistic(relayBase, SPAM_KEYS.map((k) => k.pub), Date.now() + 45_000);
+  }
 
-  // Open the window only once submits are flowing in this mode.
-  await waitForExpr(t.submitCountExpr(mode), Date.now() + 60_000);
-  const startSec = Date.now() / 1000;
-  const [, reads] = await Promise.all([
-    sleep(WINDOW_SECONDS * 1000),
-    hammerReads(t.relayPort, Date.now() + WINDOW_SECONDS * 1000),
+  // Submit RTT (spammer) and getHeader (hammer), measured concurrently over the window.
+  const deadline = Date.now() + WINDOW_SECONDS * 1000;
+  const [sr, reads] = await Promise.all([
+    spamRelay({ ...spamOpts, perSlot: variant.perSlot ?? 50, txsPerBlock: variant.txsPerBlock, deadlineMs: deadline }),
+    hammerReads(t.relayPort, deadline),
   ]);
-  await down(loadDir);
 
-  await sleep(8000); // let the last scrape land
-  const present = await waitForExpr(t.submitCountExpr(mode), Date.now() + 30_000);
-  const metricEnd = Date.now() / 1000;
-  if (!present) console.log(`  [warn] ${tag}: no submissions in this mode`);
+  // Supplementary native decomposition + the optimistic-engaged flag.
+  const native = await t.stats(Date.now() / 1000, optimistic).catch(() => ({} as Stats));
+  const engaged = await prom(t.optimisticEngagedExpr, Date.now() / 1000);
 
-  const stats = await t.stats(mode, startSec, metricEnd);
-  stats.get_header_p50_ms = pct(reads, 0.5);
-  stats.get_header_p99_ms = pct(reads, 0.99);
-  stats.get_header_n = reads.length;
-  const engaged = await prom(t.optimisticEngagedExpr, metricEnd);
-  stats.optimistic_engaged = engaged && engaged > 0 ? 1 : 0;
+  const stats: Stats = {
+    ...native,
+    submit_rtt_avg_ms: sr.rttAvgMs ?? null,
+    submit_rtt_p50_ms: sr.rttP50Ms ?? null,
+    submit_rtt_p99_ms: sr.rttP99Ms ?? null,
+    submit_n: sr.accepted,
+    submit_rejected: sr.rejected ?? null,
+    get_header_p50_ms: pct(reads, 0.5),
+    get_header_p99_ms: pct(reads, 0.99),
+    get_header_n: reads.length,
+    optimistic_engaged: engaged && engaged > 0 ? 1 : 0,
+  };
+  if (sr.accepted === 0) console.log(`  [warn] ${tag}: 0 accepted (sent ${sr.sent}, rejected ${sr.rejected}) — forged blocks fail real sim`);
   if (optimistic && !stats.optimistic_engaged) console.log(`  [warn] ${tag}: optimistic did NOT engage`);
 
   await down(devDir);
-  return { col: `${t.label}/${optimistic ? "opt" : "sync"}`, stats };
+  return { col: `${t.label}/${mode}`, stats };
 }
 
-// Display order: submit (ingest p50, tail p99, throughput, sim component), then
-// getHeader serve, then the optimistic-engaged flag.
+// ════════════════════════════════════════ output ════════════════════════════════════════
+
+// Headline table. The native bid-available and the mev-boost-relay phase decomposition are
+// printed below it as supplementary analysis.
 const METRIC_ROWS = [
-  "submit_p50_ms",
-  "submit_p99_ms",
+  "submit_rtt_avg_ms",
+  "submit_rtt_p50_ms",
+  "submit_rtt_p99_ms",
   "submit_n",
-  "submit_sim_ms",
+  "submit_rejected",
   "get_header_p50_ms",
   "get_header_p99_ms",
   "get_header_n",
   "optimistic_engaged",
 ] as const;
 
-function fmtVal(v: number | null | undefined): string {
-  if (v == null) return "—";
-  return Number.isInteger(v) ? String(v) : String(Math.round(v * 1000) / 1000);
-}
+const fmtVal = (v: number | null | undefined): string =>
+  v == null ? "—" : Number.isInteger(v) ? String(v) : String(Math.round(v * 1000) / 1000);
 
 function printComparison(results: { col: string; stats: Stats }[]): void {
   const labelW = Math.max("metric".length, ...METRIC_ROWS.map((k) => k.length));
@@ -331,39 +384,57 @@ function printComparison(results: { col: string; stats: Stats }[]): void {
   console.log("\n=== relay comparison (latencies in ms) ===");
   console.log(row("metric", cols.map((c) => c.head)));
   METRIC_ROWS.forEach((k, ri) => console.log(row(k, cols.map((c) => c.vals[ri]))));
+  console.log("\nsubmit_rtt_*_ms = client-timed submission roundtrip from the relay spammer (POST→response), same clock both relays.");
 
-  // The value prop: optimistic→sync submit-ingest delta per relay.
-  console.log("\nsubmit_p50 sync → opt (the optimistic win):");
-  const by = new Map(results.map((r) => [r.col, r.stats.submit_p50_ms]));
-  for (const label of new Set(results.map((r) => r.col.split("/")[0]))) {
-    const s = by.get(`${label}/sync`);
-    const o = by.get(`${label}/opt`);
-    const delta = s != null && o != null ? `${(s - o).toFixed(1)}ms faster (${(s / o).toFixed(1)}×)` : "n/a";
-    console.log(`  ${label}: ${fmtVal(s ?? null)} → ${fmtVal(o ?? null)}   ${delta}`);
+  // Per mode: the helix↔mev-boost-relay RTT ratio, then each relay's native decomposition.
+  for (const mode of [...new Set(results.map((r) => r.col.split("/")[1]))]) {
+    const sync = mode === "synchronous";
+    const hx = results.find((r) => r.col === `helix-1/${mode}`);
+    const mb = results.find((r) => r.col === `mev-boost-relay-1/${mode}`);
+    const h = hx?.stats.submit_rtt_avg_ms;
+    const m = mb?.stats.submit_rtt_avg_ms;
+    if (h != null && m != null && h > 0) {
+      console.log(`  [${mode}] submit RTT (avg): helix ${fmtVal(h)} vs mev-boost-relay ${fmtVal(m)}  (${(m / h).toFixed(1)}×)`);
+    }
+
+    // --- supplementary native analysis: where the time goes inside each relay ---
+    if (hx?.stats.submit_bidavail_ms != null) {
+      console.log(`      helix native request_latency (bid-available) = ${fmtVal(hx.stats.submit_bidavail_ms)} ms`);
+    }
+    if (mb) {
+      console.log(`      mev-boost-relay native submit phases (mean ms, original metric names):`);
+      for (const base of MBR_PHASES) {
+        const note = MBR_PHASE_NOTE[base] ?? (MBR_BIDAVAIL.includes(base) ? "bid-available phase" : "");
+        console.log(`        ${mbrName(base).padEnd(67)} ${fmtVal(mb.stats[mbrName(base)]).padStart(8)}  ${note}`);
+      }
+      const formula = sync ? "read+decode+prechecks+sim+redis" : "read+decode+prechecks+redis";
+      console.log(`      → native bid-available (${formula}) = ${fmtVal(mb.stats.submit_bidavail_ms)} ms   [deferred DB writes excluded; cf. its RTT above]`);
+    }
   }
 }
 
+// ═══════════════════════════════════════ entry ═══════════════════════════════════════
+
 export function benchmarkRelays(targets: Target[]): Script {
   const run: Script = async (_recipe: Recipe) => {
-    const modes: Mode[] = ["sync", "optimistic"];
     const results: { col: string; stats: Stats }[] = [];
-    for (const t of targets) {
-      for (const mode of modes) {
-        console.log(`\n──── ${t.name} / ${mode} ────`);
-        results.push(await measureOne(t, mode));
+    for (const mode of MODES) {
+      for (const t of targets) {
+        for (const variant of VARIANTS) {
+          console.log(`\n──── ${t.name} / ${mode} / ${variant.name} ────`);
+          results.push(await measureOne(t, variant, mode));
+        }
       }
     }
     printComparison(results);
-
-    // The benchmark is a job, not a standing devnet — tear down the parent's own
-    // dozzle so the next `decker up relay-bench` doesn't collide on it.
+    // This is a job, not a standing devnet — tear down the parent's own dozzle so the next
+    // `decker up relay-bench` doesn't collide on it.
     await down();
   };
   Object.defineProperty(run, "name", { value: "relay-bench" });
   return run;
 }
 
-// Build the two targets from the relay recipe factories.
 export async function defaultTargets(): Promise<Target[]> {
   const { helixRecipe } = await import("../recipes/relay/helix.ts");
   const { mevBoostRelayRecipe } = await import("../recipes/relay/mev-boost-relay.ts");
@@ -372,20 +443,19 @@ export async function defaultTargets(): Promise<Target[]> {
       name: "helix",
       label: "helix-1",
       relayPort: 4040,
-      makeRecipe: (optimistic) => helixRecipe({ optimistic }),
+      beaconUrl: "http://localhost:13500", // helix-beacon-1
+      makeRecipe: (opts) => helixRecipe(opts),
       stats: helixStats,
-      submitCountExpr: () => `sum(${sel("helix_request_latency_secs_count", HELIX_SUBMIT)})`,
       optimisticEngagedExpr: `sum(helix_simulator_count_total{is_optimistic="true"})`,
     },
     {
       name: "mev-boost-relay",
       label: "mev-boost-relay-1",
       relayPort: 9062,
-      makeRecipe: (optimistic) => mevBoostRelayRecipe({ optimistic }),
+      beaconUrl: "http://localhost:3500", // beacon-1
+      makeRecipe: (opts) => mevBoostRelayRecipe(opts),
       stats: mbrStats,
-      submitCountExpr: (mode) =>
-        `sum(${sel(`${MBR_SUBMIT}_count`, `optimistic="${mode === "optimistic" ? "true" : "false"}"`)})`,
-      optimisticEngagedExpr: `sum(${sel(`${MBR_SUBMIT}_count`, `optimistic="true"`)})`,
+      optimisticEngagedExpr: `sum(${mbrSel("submit_new_block_latency", "count", `optimistic="true"`)})`,
       prepareOptimistic: enableMbrOptimistic,
     },
   ];

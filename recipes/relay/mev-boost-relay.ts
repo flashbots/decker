@@ -1,5 +1,6 @@
 import type { Recipe } from "../../utils/types.ts";
 import { relayWarmup } from "../../scripts/relay-warmup.ts";
+import { rbuilderContainers } from "../../containers/rbuilder.ts";
 
 // A single-relay devnet: one proposer (beacon-1 + validator-1) and one builder
 // (rbuilder-1) on the proposer's EL (el-1, always at head), bidding into
@@ -12,11 +13,18 @@ const MEV_BOOST_RELAY_PUBKEY =
   "0xa1885d66bef164889a2e35845c3b626545d7b0e513efe335e97c3a45e534013fa3bc38c3b7e6143695aecc4872ac52c4";
 
 // mev-boost-relay optimistic mode is enabled at runtime (the bench POSTs builder
-// status + collateral to its --internal-api), so the recipe is identical for
-// both modes; the `optimistic` param is accepted only to match the helix factory
-// signature. prometheus scrapes the relay's own /metrics (port 9062) on top of
-// the rbuilder/mev-boost cross-checks.
-export function mevBoostRelayRecipe(_opts: { optimistic?: boolean } = {}): Recipe {
+// status + collateral to its --internal-api), so the recipe is identical whether or
+// not optimistic; `optimistic` is accepted only to match the helix factory. ssz
+// makes the builders submit SSZ; builders = how many distinct builders. prometheus
+// scrapes the relay's own /metrics (port 9062) on top of the cross-checks.
+export function mevBoostRelayRecipe(
+  opts: { optimistic?: boolean; ssz?: boolean; builders?: number; realSim?: boolean } = {},
+): Recipe {
+  // realSim (default true) validates via the real reth (el-1) — required for synchronous
+  // mode, where sim is on the bid path, and for any honest sim cost. realSim:false uses the
+  // always-valid mock-simulator (only for the synthetic spammer, whose forged blocks real
+  // reth would reject).
+  const realSim = opts.realSim ?? true;
   return {
     artifacts: { generator: "l1", fork: "fulu" },
     // Pre-register validators so the builder can bid from slot 0 instead of waiting
@@ -28,7 +36,7 @@ export function mevBoostRelayRecipe(_opts: { optimistic?: boolean } = {}): Recip
         shareProcessNamespace: true,
         containers: [
           { name: "el-1", prototype: "reth" },
-          { name: "rbuilder-1", prototype: "rbuilder", refs: { el: "el-1", beacon: "beacon-1", relay: "mev-boost-relay-1" } },
+          ...rbuilderContainers("mev-boost-relay-1", opts.builders ?? 1, opts.ssz ?? false),
         ],
       },
       {
@@ -69,10 +77,17 @@ export function mevBoostRelayRecipe(_opts: { optimistic?: boolean } = {}): Recip
           {
             name: "mev-boost-relay-1",
             prototype: "mev-boost-relay",
-            refs: { beacon: "beacon-1", postgres: "pg-mb-1", redis: "redis-mb-1", el: "el-1" },
+            // blocksim = el-1 (real reth) so sim does real validation work; with
+            // optimistic=false the relay waits on it before responding (synchronous mode).
+            refs: { beacon: "beacon-1", postgres: "pg-mb-1", redis: "redis-mb-1", el: realSim ? "el-1" : "mock-sim-1" },
+            config: { optimistic: opts.optimistic },
           },
         ],
       },
+      ...(realSim ? [] : [{
+        name: "mock-sim-1",
+        containers: [{ name: "mock-sim-1", prototype: "mock-simulator" }],
+      }]),
       {
         name: "prometheus-1",
         containers: [{
@@ -81,7 +96,10 @@ export function mevBoostRelayRecipe(_opts: { optimistic?: boolean } = {}): Recip
           config: {
             scrape: [
               { job: "mev-boost-relay", ref: "mev-boost-relay-1", port: "http", path: "/metrics" },
-              { job: "rbuilder-1", ref: "rbuilder-1", port: "full_telemetry", path: "/debug/metrics/prometheus" },
+              // rbuilder only exists when builders > 0 (the synthetic spammer replaces it).
+              ...((opts.builders ?? 1) > 0
+                ? [{ job: "rbuilder-1", ref: "rbuilder-1", port: "full_telemetry", path: "/debug/metrics/prometheus" }]
+                : []),
               { job: "mev-boost", ref: "mev-boost-1", port: "metrics" },
             ],
           },

@@ -1,7 +1,8 @@
 import type { Ports, Recipe } from "../../utils/types.ts";
+import { BUILDER_KEYS, rbuilderContainers } from "../../containers/rbuilder.ts";
 
-// A single-relay devnet: one proposer (beacon-1 + validator-1) and one builder
-// (rbuilder-1) on the proposer's EL (el-1, always at head), bidding into helix-1
+// A single-relay devnet: one proposer (beacon-1 + validator-1) and N builders
+// (rbuilder-1..N) on the proposer's EL (el-1, always at head), bidding into helix-1
 // only — plus helix's own sim stack and observability. Run this and the
 // mev-boost-relay sibling and compare; see recipes/relay-bench.ts.
 
@@ -17,11 +18,17 @@ const helixBeaconPorts: Ports = {
   quic:      { port: 19100, protocol: "UDP", service: false },
 };
 
-// `optimistic` marks the rbuilder optimistic on helix (fast path: accept before
-// sim). header_delay is forced off so getHeader measures raw serve latency, not
-// helix's policy delay — a bench normalization. prometheus scrapes helix's own
-// metrics (helix-1:metrics) on top of the rbuilder/mev-boost cross-checks.
-export function helixRecipe(opts: { optimistic?: boolean } = {}): Recipe {
+// optimistic marks the builders optimistic on helix (fast path: accept before sim).
+// ssz makes the builders submit SSZ instead of JSON. builders = how many distinct
+// builders submit concurrently. header_delay is forced off so getHeader measures
+// raw serve latency (a bench normalization).
+export function helixRecipe(
+  opts: { optimistic?: boolean; ssz?: boolean; builders?: number; realSim?: boolean } = {},
+): Recipe {
+  const builders = opts.builders ?? 1;
+  // realSim (default true) validates via helix-sim-1 (the real gattaca reth fork) — required
+  // for synchronous mode. realSim:false uses the always-valid mock-simulator (spammer only).
+  const realSim = opts.realSim ?? true;
   return {
     artifacts: { generator: "l1", fork: "fulu" },
     pods: [
@@ -30,7 +37,7 @@ export function helixRecipe(opts: { optimistic?: boolean } = {}): Recipe {
         shareProcessNamespace: true,
         containers: [
           { name: "el-1", prototype: "reth" },
-          { name: "rbuilder-1", prototype: "rbuilder", refs: { el: "el-1", beacon: "beacon-1", relay: "helix-1" } },
+          ...rbuilderContainers("helix-1", builders, opts.ssz ?? false),
         ],
       },
       {
@@ -80,11 +87,24 @@ export function helixRecipe(opts: { optimistic?: boolean } = {}): Recipe {
           {
             name: "helix-1",
             prototype: "helix",
-            refs: { beacon: "helix-beacon-1", sim: "helix-sim-1" },
-            config: { optimistic: opts.optimistic ?? false, headerDelay: false },
+            // sim = helix-sim-1 (the real gattaca reth-fork validator) so sim does real work;
+            // with optimistic=false helix waits on it before responding (synchronous mode).
+            refs: { beacon: "helix-beacon-1", sim: realSim ? "helix-sim-1" : "mock-sim-1" },
+            config: {
+              optimistic: opts.optimistic ?? false,
+              headerDelay: false,
+              // Always configure at least one builder pubkey (the synthetic spammer's),
+              // even at builders:0 where no rbuilder container runs — otherwise helix
+              // wouldn't know the spammer's builder and couldn't process it optimistically.
+              builderPubkeys: BUILDER_KEYS.slice(0, Math.max(builders, 1)).map((b) => b.pubkey),
+            },
           },
         ],
       },
+      ...(realSim ? [] : [{
+        name: "mock-sim-1",
+        containers: [{ name: "mock-sim-1", prototype: "mock-simulator" }],
+      }]),
       {
         name: "prometheus-1",
         containers: [{
@@ -93,7 +113,9 @@ export function helixRecipe(opts: { optimistic?: boolean } = {}): Recipe {
           config: {
             scrape: [
               { job: "helix", ref: "helix-1", port: "metrics" },
-              { job: "rbuilder-1", ref: "rbuilder-1", port: "full_telemetry", path: "/debug/metrics/prometheus" },
+              ...(builders > 0
+                ? [{ job: "rbuilder-1", ref: "rbuilder-1", port: "full_telemetry", path: "/debug/metrics/prometheus" }]
+                : []),
               { job: "mev-boost", ref: "mev-boost-1", port: "metrics" },
             ],
           },

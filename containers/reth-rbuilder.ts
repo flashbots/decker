@@ -46,17 +46,17 @@ export function buildProcess(def: ProcessDef, ctx: HostCtx): ProcessResult {
   const ipcPath = `${dataDir}/reth.ipc`;
 
   // rbuilder runs in-process, so it reads reth's state from the same datadir/IPC.
-  const toml = rbuilderConfigFor(
-    def.name,
-    `${ctx.artifactsPath}/genesis.json`,
-    dataDir,
-    ipcPath,
-    "0.0.0.0",
-    ctx.url(beacon, "http"),
-    relay,
-    ctx.url(relay, "http"),
-    portNum(ps.http),
-  );
+  const toml = rbuilderConfigFor({
+    name: def.name,
+    chainPath: `${ctx.artifactsPath}/genesis.json`,
+    rethDatadir: dataDir,
+    rethIpcPath: ipcPath,
+    bindIp: "0.0.0.0",
+    clUrl: ctx.url(beacon, "http"),
+    relayName: relay,
+    relayUrl: ctx.url(relay, "http"),
+    httpPort: portNum(ps.http),
+  });
   const tomlPath = ctx.configPath(def.name, "rbuilder.toml");
 
   return {

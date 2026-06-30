@@ -122,12 +122,28 @@ export function buildContainer(def: ContainerDef, ctx: Ctx): ContainerResult {
     "--known-validators", knownValidatorsCSV(),
     "--internal-api",
   ];
+  // optimistic (default true, back-compat) forces the optimistic fast path. Set false for a
+  // synchronous-mode run so the relay simulates before responding (sim on the bid path).
+  const optimistic = (def.config?.optimistic as boolean | undefined) ?? true;
+  const env: Record<string, string> = {
+    ...c.forkEnv,
+    ENABLE_BUILDER_CANCELLATIONS: "1",
+    ALLOW_SYNCING_BEACON_NODE: "1",
+    // Ignore transient/ignorable sim validation errors rather than demoting the builder.
+    // A no-op with the default mock sim (it never errors); only bites under REAL_SIM, where
+    // it makes the relay accept the spammer's forged blocks that a real EL would reject.
+    ENABLE_IGNORABLE_VALIDATION_ERRORS: "1",
+  };
+  if (optimistic) {
+    // Force every submission onto the optimistic path (bypass the slot==optimisticSlot gate);
+    // without it the spammer's slot-stale submissions mostly fall to the pessimistic path.
+    env.ENABLE_OPTIMISTIC_ALL_SLOTS = "1";
+    // Never demote the builder — under REAL_SIM the forged blocks fail sim and would otherwise
+    // fire demoteBuilder (a postgres write each), adding DB contention that skews the latency.
+    env.DISABLE_BUILDER_DEMOTION = "1";
+  }
   return {
-    container: shellContainer(
-      { ...c.forkEnv, ENABLE_BUILDER_CANCELLATIONS: "1", ALLOW_SYNCING_BEACON_NODE: "1" },
-      waitExecScript(c.pgHostPort, c.redisHostPort, args),
-      { http: apiPort },
-    ),
+    container: shellContainer(env, waitExecScript(c.pgHostPort, c.redisHostPort, args), { http: apiPort }),
   };
 }
 
