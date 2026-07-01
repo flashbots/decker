@@ -12,7 +12,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: denoland/setup-deno@v2
         with:
-          deno-version: v2.x
+          deno-version: latest
       - name: Lint
         run: deno lint
       - name: Type-check
@@ -28,7 +28,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: denoland/setup-deno@v2
         with:
-          deno-version: v2.x
+          deno-version: latest
       - name: Compile binary
         run: make compile OUTPUT=decker
       - name: Start podman API socket
