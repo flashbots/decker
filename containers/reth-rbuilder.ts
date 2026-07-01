@@ -72,7 +72,10 @@ export function buildProcess(def: ProcessDef, ctx: HostCtx): ProcessResult {
         "--ipcpath", ipcPath,
         "--http",
         "--http.addr", "0.0.0.0",
-        "--http.api", "admin,eth,web3,net,rpc,mev,flashbots",
+        // trace/debug + open CORS let Blockscout index traces and the explorers'
+        // browser-side RPC reach this node (see recipes/rbuilder-reth2.ts).
+        "--http.api", "admin,eth,web3,net,rpc,mev,flashbots,trace,debug",
+        "--http.corsdomain", "*",
         "--http.port", String(portNum(ps.rpc)),
         "--authrpc.port", String(portNum(ps.authrpc)),
         "--authrpc.addr", "0.0.0.0",

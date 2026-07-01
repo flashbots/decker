@@ -5,6 +5,7 @@ import { cleanRuntime, emit } from "../utils/emit.ts";
 import { ensureBinaries } from "../utils/binary-build.ts";
 import { ensureImages } from "../utils/image-build.ts";
 import { DEFAULT_MANIFEST, ensureClone, loadManifest } from "../utils/manifest.ts";
+import { lookup, makeCtx } from "../utils/resolve.ts";
 import { dim, done, fail, note, red, rule, step, summary } from "../utils/term.ts";
 import type { ImageEngine, Recipe, Renderer, RendererPaths } from "../utils/types.ts";
 
@@ -30,10 +31,23 @@ export async function resolveInput(arg?: string): Promise<Input> {
   return { kind: "recipe", ref: arg };
 }
 
-export function printSummary(renderers: Renderer[], paths: RendererPaths) {
+export function printSummary(renderers: Renderer[], paths: RendererPaths, recipe?: Recipe) {
   const entries: Array<[string, string]> = [];
   for (const r of renderers) {
     if (r.summary) entries.push(...r.summary(paths));
+  }
+  // Web UIs declared by container prototypes (e.g. the explorers), listed after
+  // the renderer's own lines (Dozzle). Host port == container port for pods, so
+  // they're reachable on localhost.
+  if (recipe) {
+    const ctx = makeCtx(recipe, () => "localhost");
+    for (const pod of recipe.pods) {
+      for (const def of pod.containers) {
+        const proto = lookup(def.prototype);
+        if (!proto.webui) continue;
+        entries.push([proto.webui.label, ctx.url(def.name, proto.webui.port ?? "http")]);
+      }
+    }
   }
   summary(entries);
 }
@@ -72,6 +86,7 @@ export type UpOutcome = {
   code: number;
   renderers: Renderer[];
   paths: RendererPaths;
+  recipe: Recipe;
 };
 
 // up a recipe identified by name or .ts path (loads it, then upRecipe).
@@ -107,7 +122,7 @@ export async function upRecipe(
       await generateArtifacts(recipe);
     } catch (e) {
       fail(sArt, (e as Error).message);
-      return { code: 1, renderers, paths };
+      return { code: 1, renderers, paths, recipe };
     }
     done(sArt, `${recipe.artifacts.generator}/${recipe.artifacts.fork}`);
   }
@@ -119,6 +134,15 @@ export async function upRecipe(
   paths = emitted.paths;
   done(sEmit, renderers.map((r) => r.name).join(" + "));
 
+  const missingTools = missingBinaries(renderers.flatMap((r) => r.requiredBinaries ?? []));
+  if (missingTools.length > 0) {
+    console.error("");
+    console.error(red("✗ please install the following dependencies:"));
+    for (const t of missingTools) console.error(`    ${t}`);
+    console.error("");
+    return { code: 1, renderers, paths, recipe };
+  }
+
   // Binaries built from source (binaryBuilds) are produced below, so they are
   // not expected to exist yet — only check the unmanaged ones.
   const missing = missingBinaries(emitted.binaries.filter((b) => !emitted.binaryBuilds.has(b)));
@@ -128,7 +152,7 @@ export async function upRecipe(
     for (const b of missing) console.error(`    ${b}`);
     console.error("");
     console.error(`  ${dim("place them in ./bin/, set 'binary' in the recipe, or install on PATH")}`);
-    return { code: 1, renderers, paths };
+    return { code: 1, renderers, paths, recipe };
   }
 
   if (emitted.binaryBuilds.size > 0) {
@@ -143,7 +167,7 @@ export async function upRecipe(
       note("✓", `binaries ready ${dim(`(${extra})`)}`, t);
     } catch (e) {
       console.error(red(`✗ binary build failed: ${(e as Error).message}`));
-      return { code: 1, renderers, paths };
+      return { code: 1, renderers, paths, recipe };
     }
   }
 
@@ -160,7 +184,7 @@ export async function upRecipe(
       note("✓", `images ready ${dim(`(${extra})`)}`, t);
     } catch (e) {
       console.error(red(`✗ image build failed: ${(e as Error).message}`));
-      return { code: 1, renderers, paths };
+      return { code: 1, renderers, paths, recipe };
     }
   }
 
@@ -174,7 +198,7 @@ export async function upRecipe(
     const code = await r.start!(paths);
     if (code !== 0) {
       fail(sp, `${r.name} start failed`);
-      return { code, renderers, paths };
+      return { code, renderers, paths, recipe };
     }
     done(sp);
   }
@@ -189,7 +213,7 @@ export async function upRecipe(
         note("✓", label, t);
       } catch (e) {
         console.error(red(`✗ ${label} failed: ${(e as Error).message}`));
-        return { code: 1, renderers, paths };
+        return { code: 1, renderers, paths, recipe };
       }
     }
   }
@@ -200,12 +224,12 @@ export async function upRecipe(
     const code = await r.start!(paths);
     if (code !== 0) {
       console.error(red(`✗ ${r.name} start failed`));
-      return { code, renderers, paths };
+      return { code, renderers, paths, recipe };
     }
     note("✓", `${r.name} started`, t);
   }
 
-  return { code: 0, renderers, paths };
+  return { code: 0, renderers, paths, recipe };
 }
 
 export async function up(
@@ -230,6 +254,6 @@ export const command = new Command()
       Deno.exit(await upProject("up", input.path));
     }
     const out = await upRecipeFile(input.ref, override);
-    if (out.code === 0) printSummary(out.renderers, out.paths);
+    if (out.code === 0) printSummary(out.renderers, out.paths, out.recipe);
     Deno.exit(out.code);
   });

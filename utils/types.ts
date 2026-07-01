@@ -153,10 +153,15 @@ export type HostCtx = Ctx & {
 export type PrototypeBuildContainer = (def: ContainerDef, ctx: Ctx) => ContainerResult;
 export type PrototypeBuildProcess = (def: ProcessDef, ctx: HostCtx) => ProcessResult;
 
+// A container that exposes a human-facing web UI worth advertising in the `up`
+// summary. `port` names which entry in `ports` to link (defaults to "http").
+export type WebUi = { label: string; port?: string };
+
 export type Prototype = {
   ports: Ports;
   buildContainer?: PrototypeBuildContainer;
   buildProcess?: PrototypeBuildProcess;
+  webui?: WebUi;
 };
 
 export type RendererSlot = "pods" | "processes";
@@ -190,6 +195,7 @@ export type Renderer = {
   slot: RendererSlot;
   imageEngine?: ImageEngine;
   hostGateway?: string;
+  requiredBinaries?: string[];
   render(recipe: Recipe, ctx: RenderCtx): RenderResult;
   start?(paths: RendererPaths): Promise<number>;
   stop?(runtimeDir: string): Promise<number>;

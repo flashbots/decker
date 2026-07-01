@@ -96,6 +96,7 @@ function summary(_paths: RendererPaths): Array<[string, string]> {
 export const renderer: Renderer = {
   name: "process-compose",
   slot: "processes",
+  requiredBinaries: ["process-compose"],
   render: build,
   start,
   stop,

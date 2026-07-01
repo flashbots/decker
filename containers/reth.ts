@@ -11,6 +11,20 @@ function resolvedPorts(def: ContainerDef | ProcessDef): Ports {
   return { ...ports, ...((def.config?.ports as Ports | undefined) ?? {}) };
 }
 
+const DEFAULT_HTTP_API = "admin,eth,web3,net,rpc,mev,flashbots";
+
+// Opt-in RPC surface. Defaults preserve the historical behavior for every other
+// recipe; the l1 recipe widens it (trace,debug) + opens CORS so Blockscout can
+// index traces and the browser can hit the node directly.
+function rpcApi(def: ContainerDef | ProcessDef): string {
+  return (def.config?.rpcApi as string | undefined) ?? DEFAULT_HTTP_API;
+}
+
+function corsArgs(def: ContainerDef | ProcessDef): string[] {
+  const cors = def.config?.corsdomain as string | undefined;
+  return cors ? ["--http.corsdomain", cors] : [];
+}
+
 export function buildContainer(def: ContainerDef, _ctx: Ctx): ContainerResult {
   const ps = resolvedPorts(def);
   return {
@@ -27,7 +41,8 @@ export function buildContainer(def: ContainerDef, _ctx: Ctx): ContainerResult {
         "--ipcpath", "/data_reth/reth.ipc",
         "--http",
         "--http.addr", "0.0.0.0",
-        "--http.api", "admin,eth,web3,net,rpc,mev,flashbots",
+        "--http.api", rpcApi(def),
+        ...corsArgs(def),
         "--http.port", String(portNum(ps.rpc)),
         "--authrpc.port", String(portNum(ps.authrpc)),
         "--authrpc.addr", "0.0.0.0",
@@ -67,7 +82,8 @@ export function buildProcess(def: ProcessDef, ctx: HostCtx): ProcessResult {
         "--ipcpath", `${dataDir}/reth.ipc`,
         "--http",
         "--http.addr", "0.0.0.0",
-        "--http.api", "admin,eth,web3,net,rpc,mev,flashbots",
+        "--http.api", rpcApi(def),
+        ...corsArgs(def),
         "--http.port", String(portNum(ps.rpc)),
         "--authrpc.port", String(portNum(ps.authrpc)),
         "--authrpc.addr", "0.0.0.0",

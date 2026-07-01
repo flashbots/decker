@@ -24,6 +24,7 @@ async function loadPrototypes(): Promise<Record<string, Prototype>> {
       ports: mod.ports,
       buildContainer: mod.buildContainer,
       buildProcess: mod.buildProcess,
+      webui: mod.webui,
     };
   }
   return out;

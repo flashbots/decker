@@ -114,6 +114,7 @@ export const renderer: Renderer = {
   slot: "pods",
   imageEngine: "docker",
   hostGateway: HOST_GATEWAY,
+  requiredBinaries: ["docker"],
   render: build,
   start,
   stop,

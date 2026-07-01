@@ -21,7 +21,7 @@ async function advertise(ref: string, out: UpOutcome) {
       console.log(`    ${name.padEnd(10)} ${warn(String(portNum(spec)))}`);
     }
   }
-  printSummary(out.renderers, out.paths);
+  printSummary(out.renderers, out.paths, out.recipe);
   console.log("");
   console.log(`  ${muted("Ctrl+C to stop")}`);
 }

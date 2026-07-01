@@ -23,6 +23,14 @@ export function buildContainer(def: ContainerDef, ctx: Ctx): ContainerResult {
     const u = new URL(ctx.url(p, "p2p-tcp"));
     return `/dns4/${u.hostname}/tcp/${u.port}`;
   });
+
+  // Post-Fulu (PeerDAS), blobs are distributed as data columns and a plain node
+  // custodies only CUSTODY_REQUIREMENT (4 of 128). The legacy blob_sidecars
+  // endpoint (used by e.g. blobscan's indexer) then 400s because it can't
+  // reconstruct blobs from <64 columns. `config.supernode: true` makes this node
+  // custody all columns so it can serve full blobs — required on a single-node
+  // devnet where there are no peers to sample the missing columns from.
+  const supernode = def.config?.supernode === true;
   return {
     container: {
       image: "docker.io/sigp/lighthouse:v8.1.0",
@@ -51,6 +59,7 @@ export function buildContainer(def: ContainerDef, ctx: Ctx): ContainerResult {
         "--always-prepare-payload",
         "--prepare-payload-lookahead", "8000",
         "--suggested-fee-recipient", "0x690B9A9E9aa1C9dB991C7721a92d351Db4FaC990",
+        ...(supernode ? ["--supernode"] : []),
         ...(peerMultiaddrs.length > 0 ? ["--libp2p-addresses", peerMultiaddrs.join(",")] : []),
         ...(builder ? [
           "--builder", ctx.url(builder, "http"),

@@ -76,6 +76,7 @@ export const renderer: Renderer = {
   slot: "pods",
   imageEngine: "podman",
   hostGateway: HOST_GATEWAY,
+  requiredBinaries: ["podman"],
   render: build,
   start,
   stop,
