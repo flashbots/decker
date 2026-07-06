@@ -13,6 +13,13 @@
 // relay uses): parent_hash, slot, timestamp, prev_randao, withdrawals. What can be fake
 // (never validated pre-sim): block_hash, state/receipts roots, transactions. The proposer
 // fee_recipient + pubkey come from the relay's own duties so they match exactly.
+//
+// Optional FLOOD mode (opts.flood): a second, concurrent submitter — its own pool of
+// distinct builder identities, each running a persistent closed loop (send → await →
+// send again) for the WHOLE run, sustaining N concurrent in-flight requests throughout,
+// not just at slot boundaries. It exists to load/contend the relay continuously while the
+// main spammer's sequential RTT is measured, not to win any bids: its values stay under
+// the main spammer's floor. See the floodWorker closure inside spamRelay.
 
 import { ssz } from "npm:@lodestar/types@^1.30.0";
 import { ByteVectorType, ContainerType, UintBigintType } from "npm:@chainsafe/ssz@^1.2.0";
@@ -75,6 +82,14 @@ type Attrs = {
 // getHeader find the bid.
 type Duty = { feeRecipient: string; gasLimit: number; pubkey: string };
 
+// A pool of concurrent low-bid submitters, each looping continuously (see FLOOD mode
+// above). Distinct per-key identities so no single builder pubkey absorbs all the
+// concurrency (which would just benchmark that one builder's relay-side handling).
+export type FloodOpts = {
+  builderKeys: { priv: string; pub: string }[]; // one persistent closed-loop worker per key
+  valueWei: bigint; // floor for the flood's bids — must stay below the main spammer's baseValue
+};
+
 export type SpamOpts = {
   relayUrl: string; // e.g. http://localhost:9062
   beaconUrl: string; // e.g. http://localhost:3500
@@ -83,6 +98,7 @@ export type SpamOpts = {
   perSlot: number; // how many submissions to fire per slot
   txsPerBlock?: number; // transactions per submitted block (default 1) — controls block size
   deadlineMs: number;
+  flood?: FloodOpts;
 };
 
 export type SpamResult = {
@@ -96,7 +112,20 @@ export type SpamResult = {
   rttP50Ms?: number;
   rttP99Ms?: number;
   rttMaxMs?: number;
+  flood?: { sent: number; accepted: number; rejected: number; lastError?: string };
 };
+
+// Deterministic pool of extra distinct builder identities, generated the same way
+// BUILDER_KEYS' hand-picked ones were (bls12_381.getPublicKey off a small integer secret
+// scalar) — just produced on the fly so a pool of e.g. 100 doesn't need to be hand-pasted.
+// startSeed must not overlap BUILDER_KEYS' scalars (0x0a11..0x0c33) — callers pick a
+// starting point past those.
+export function makeKeyPool(n: number, startSeed: number): { priv: string; pub: string }[] {
+  return Array.from({ length: n }, (_, i) => {
+    const priv = (startSeed + i).toString(16).padStart(64, "0");
+    return { priv: `0x${priv}`, pub: toHex(bls12_381.getPublicKey(fromHex(priv))) };
+  });
+}
 
 // Parse one SSE frame into Attrs (or null if it isn't a usable payload_attributes event).
 function parseAttrs(frame: string): Attrs | null {
@@ -176,12 +205,20 @@ function buildSubmission(o: {
   };
 }
 
+// Network-level failures (connection refused/reset, etc. — as opposed to an HTTP error
+// response) are real signal under concurrent load, so they're surfaced via status 0 and
+// the error text rather than thrown — a submitter racing 99 others must keep going.
 async function postSubmission(relayUrl: string, body: Record<string, unknown>): Promise<{ ok: boolean; status: number; text: string }> {
-  const r = await fetch(`${relayUrl}/relay/v1/builder/blocks`, {
-    method: "POST",
-    headers: { "content-type": "application/json", "eth-consensus-version": "fulu" },
-    body: JSON.stringify(body),
-  }).catch((e) => ({ ok: false, status: 0, text: () => String(e) } as unknown as Response));
+  let r: Response;
+  try {
+    r = await fetch(`${relayUrl}/relay/v1/builder/blocks`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "eth-consensus-version": "fulu" },
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    return { ok: false, status: 0, text: String(e) };
+  }
   const text = await r.text().catch(() => "");
   return { ok: r.ok, status: r.status, text };
 }
@@ -200,6 +237,50 @@ export async function spamRelay(opts: SpamOpts): Promise<SpamResult> {
   let counter = 0;
   const baseValue = 1_000_000_000_000_000_000n; // 1 ETH floor base
   const txs = Array(opts.txsPerBlock ?? 1).fill(DUMMY_TX); // same blob in every block — never parsed
+
+  // Flood: FLOOD_CONCURRENCY persistent workers, each looping send→await→send as fast as it
+  // can — sustained concurrent load for the ENTIRE run, not a once-per-slot burst. Each worker
+  // always uses the latest known (attrs, duty), updated by the main slot loop below; between
+  // slot events it keeps resubmitting against the same attrs (like fireSlotPackage does within
+  // one slot), so there's no idle gap. Shares the SAME `counter` as fireSlotPackage — both
+  // write counter into the same blockHash byte offset, so a separate counter starting at 0
+  // would collide (spammer #1's first blockHash == flood's first blockHash). One shared,
+  // ever-incrementing counter keeps every blockHash/value globally unique across both.
+  let currentAttrs: Attrs | null = null;
+  let currentDuty: Duty | null = null;
+  const pending: Promise<void>[] = [];
+  if (opts.flood) {
+    res.flood = { sent: 0, accepted: 0, rejected: 0 };
+    const { builderKeys, valueWei } = opts.flood;
+    const floodWorker = async (key: { priv: string; pub: string }) => {
+      while (!ac.signal.aborted) {
+        if (!currentAttrs || !currentDuty) {
+          await new Promise((r) => setTimeout(r, 50)); // only spins before the first slot event
+          continue;
+        }
+        const attrs = currentAttrs, duty = currentDuty;
+        counter++;
+        const blockHash = new Uint8Array(32);
+        new DataView(blockHash.buffer).setUint32(28, counter);
+        const body = buildSubmission({
+          attrs, key, domain, txs,
+          proposerFeeRecipient: duty.feeRecipient,
+          proposerPubkey: duty.pubkey,
+          gasLimit: duty.gasLimit,
+          value: valueWei + BigInt(counter),
+          blockHash,
+        });
+        res.flood!.sent++;
+        const out = await postSubmission(opts.relayUrl, body);
+        if (out.ok) res.flood!.accepted++;
+        else {
+          res.flood!.rejected++;
+          res.flood!.lastError = `${out.status} ${out.text.slice(0, 160)}`;
+        }
+      }
+    };
+    for (const key of builderKeys) pending.push(floodWorker(key));
+  }
 
   const refreshDuties = async () => {
     try {
@@ -273,6 +354,10 @@ export async function spamRelay(opts: SpamOpts): Promise<SpamResult> {
           const duty = dutyCache.get(String(attrs.slot));
           if (duty) {
             res.slots++;
+            // Publish the latest (attrs, duty) for the flood workers — they run independently
+            // of this loop's cadence and just keep reading whatever is current here.
+            currentAttrs = attrs;
+            currentDuty = duty;
             await fireSlotPackage(attrs, duty);
           }
         }
@@ -283,6 +368,7 @@ export async function spamRelay(opts: SpamOpts): Promise<SpamResult> {
     }
   }
 
+  await Promise.all(pending); // wait for flood workers to notice the abort and exit their loops
   clearTimeout(deadlineTimer);
   if (rtts.length) {
     const s = [...rtts].sort((a, b) => a - b);

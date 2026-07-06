@@ -9,17 +9,23 @@
 // Each relay's native metrics are also scraped as a SUPPLEMENTARY decomposition (helix's
 // request_latency; mev-boost-relay's per-phase histograms) to show WHERE the roundtrip goes —
 // but the headline is always the RTT. Driven by recipes/relay-bench.ts.
+//
+// Alongside the RTT spammer, a FLOOD of FLOOD_CONCURRENCY persistent low-bid submitters keeps
+// that many requests in flight continuously for the whole window (distinct builder pool,
+// values under the spammer's floor so they never win) — pure background contention, to see
+// how each relay holds up under sustained concurrent load while the RTT spammer's sequential
+// numbers are taken. See relay-spammer.ts.
 
 import { down } from "../commands/down.ts";
 import { upRecipe } from "../commands/up.ts";
 import { BUILDER_KEYS } from "../containers/rbuilder.ts";
-import { spamRelay } from "./relay-spammer.ts";
+import { makeKeyPool, spamRelay } from "./relay-spammer.ts";
 import type { Recipe, Script } from "../utils/types.ts";
 
 // ═══════════════════════════════════════ types ═══════════════════════════════════════
 
 type Stats = Record<string, number | null>;
-type RecipeOpts = { optimistic: boolean; ssz: boolean; builders: number; realSim?: boolean };
+type RecipeOpts = { optimistic: boolean; ssz: boolean; builders: number; realSim?: boolean; extraBuilderPubkeys?: string[] };
 
 // synchronous = the relay simulates before responding (sim on the bid path).
 // optimistic  = the relay responds first, with simulation off the bid path.
@@ -61,6 +67,14 @@ const VARIANTS: Variant[] = [
 // How long to spam per cell (dense enough for a stable RTT distribution).
 const WINDOW_SECONDS = 60;
 
+// Concurrent low-bid flood: this many distinct builders each keep one submission
+// continuously in flight for the whole window — sustained background load/contention
+// alongside the sequential RTT spammer. Off by default (bench headline is the plain
+// RTT comparison); flip to true to re-enable the contention scenario.
+const FLOOD_ENABLED = false;
+const FLOOD_CONCURRENCY = 100;
+const FLOOD_BASE_VALUE = 500_000_000_000_000_000n; // 0.5 ETH — stays under the spammer's 1 ETH floor
+
 // ── fixed devnet facts: host ports the recipes expose, and the single proposer ──
 const DECKER_ROOT = new URL("../", import.meta.url).pathname.replace(/\/$/, "");
 const PROM = "http://localhost:9009";
@@ -85,6 +99,11 @@ function pct(arr: number[], p: number): number | null {
 // The spammer submits as a single builder. With builders:0 the recipe configures exactly one
 // builder pubkey (helix via Math.max(builders,1); mev-boost-relay registers it on first submit).
 const SPAM_KEYS = BUILDER_KEYS.slice(0, 1).map((k) => ({ priv: k.key, pub: k.pubkey }));
+
+// The flood's distinct builder pool (deterministic, generated past BUILDER_KEYS' hand-picked
+// scalars so there's no collision). helix needs these allow-listed at boot (see
+// extraBuilderPubkeys below); mev-boost-relay auto-learns them on first submission.
+const FLOOD_KEYS = makeKeyPool(FLOOD_CONCURRENCY, 0x1000);
 
 function genesisForkVersion(): Uint8Array {
   const txt = Deno.readTextFileSync(`${DECKER_ROOT}/runtime/artifacts/testnet/config.yaml`);
@@ -305,11 +324,14 @@ async function measureOne(t: Target, variant: Variant, mode: Mode): Promise<{ co
   const relayBase = `http://localhost:${t.relayPort}`;
 
   // builders:0 → no rbuilder, so the spammer is the only submission source and submit RTT is
-  // the pure client→relay roundtrip.
-  const up = await upRecipe(tag, t.makeRecipe({ optimistic, ssz: false, builders: 0, realSim: REAL_SIM }), undefined, {
-    attached: true,
-    runtimeDir: devDir,
-  });
+  // the pure client→relay roundtrip. extraBuilderPubkeys allow-lists the flood pool on helix
+  // (mev-boost-relay needs no such config — see relay-spammer.ts's FLOOD comment).
+  const up = await upRecipe(
+    tag,
+    t.makeRecipe({ optimistic, ssz: false, builders: 0, realSim: REAL_SIM, extraBuilderPubkeys: FLOOD_KEYS.map((k) => k.pub) }),
+    undefined,
+    { attached: true, runtimeDir: devDir },
+  );
   if (up.code !== 0) throw new Error(`${tag}: devnet up failed (${up.code})`);
   await waitForLive(Date.now() + 180_000);
   await dutiesReady(relayBase, Date.now() + 60_000);
@@ -323,10 +345,17 @@ async function measureOne(t: Target, variant: Variant, mode: Mode): Promise<{ co
     await t.prepareOptimistic(relayBase, SPAM_KEYS.map((k) => k.pub), Date.now() + 45_000);
   }
 
-  // Submit RTT (spammer) and getHeader (hammer), measured concurrently over the window.
+  // Submit RTT (spammer), getHeader (hammer), and the concurrent flood — all measured over
+  // the same window. Flood only runs here, not during optimistic warm-up above.
   const deadline = Date.now() + WINDOW_SECONDS * 1000;
   const [sr, reads] = await Promise.all([
-    spamRelay({ ...spamOpts, perSlot: variant.perSlot ?? 50, txsPerBlock: variant.txsPerBlock, deadlineMs: deadline }),
+    spamRelay({
+      ...spamOpts,
+      perSlot: variant.perSlot ?? 50,
+      txsPerBlock: variant.txsPerBlock,
+      deadlineMs: deadline,
+      flood: FLOOD_ENABLED ? { builderKeys: FLOOD_KEYS, valueWei: FLOOD_BASE_VALUE } : undefined,
+    }),
     hammerReads(t.relayPort, deadline),
   ]);
 
@@ -345,9 +374,14 @@ async function measureOne(t: Target, variant: Variant, mode: Mode): Promise<{ co
     get_header_p99_ms: pct(reads, 0.99),
     get_header_n: reads.length,
     optimistic_engaged: engaged && engaged > 0 ? 1 : 0,
+    flood_accepted: sr.flood?.accepted ?? null,
+    flood_rejected: sr.flood?.rejected ?? null,
   };
   if (sr.accepted === 0) console.log(`  [warn] ${tag}: 0 accepted (sent ${sr.sent}, rejected ${sr.rejected}) — forged blocks fail real sim`);
   if (optimistic && !stats.optimistic_engaged) console.log(`  [warn] ${tag}: optimistic did NOT engage`);
+  if (sr.flood && sr.flood.rejected > 0) {
+    console.log(`  [warn] ${tag}: flood ${sr.flood.rejected}/${sr.flood.sent} rejected — last: ${sr.flood.lastError}`);
+  }
 
   await down(devDir);
   return { col: `${t.label}/${mode}`, stats };
@@ -367,6 +401,8 @@ const METRIC_ROWS = [
   "get_header_p99_ms",
   "get_header_n",
   "optimistic_engaged",
+  "flood_accepted",
+  "flood_rejected",
 ] as const;
 
 const fmtVal = (v: number | null | undefined): string =>
@@ -385,6 +421,7 @@ function printComparison(results: { col: string; stats: Stats }[]): void {
   console.log(row("metric", cols.map((c) => c.head)));
   METRIC_ROWS.forEach((k, ri) => console.log(row(k, cols.map((c) => c.vals[ri]))));
   console.log("\nsubmit_rtt_*_ms = client-timed submission roundtrip from the relay spammer (POST→response), same clock both relays.");
+  console.log(`flood_accepted/rejected = concurrent low-bid load (${FLOOD_CONCURRENCY} distinct builders, each looping continuously), never wins — pure background contention.`);
 
   // Per mode: the helix↔mev-boost-relay RTT ratio, then each relay's native decomposition.
   for (const mode of [...new Set(results.map((r) => r.col.split("/")[1]))]) {

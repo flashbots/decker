@@ -23,7 +23,16 @@ const helixBeaconPorts: Ports = {
 // builders submit concurrently. header_delay is forced off so getHeader measures
 // raw serve latency (a bench normalization).
 export function helixRecipe(
-  opts: { optimistic?: boolean; ssz?: boolean; builders?: number; realSim?: boolean } = {},
+  opts: {
+    optimistic?: boolean;
+    ssz?: boolean;
+    builders?: number;
+    realSim?: boolean;
+    // Extra builder pubkeys to allow-list beyond BUILDER_KEYS (e.g. relay-bench's
+    // concurrent flood pool) — helix requires static pre-registration, unlike
+    // mev-boost-relay which auto-learns a builder on its first submission.
+    extraBuilderPubkeys?: string[];
+  } = {},
 ): Recipe {
   const builders = opts.builders ?? 1;
   // realSim (default true) validates via helix-sim-1 (the real gattaca reth fork) — required
@@ -96,7 +105,10 @@ export function helixRecipe(
               // Always configure at least one builder pubkey (the synthetic spammer's),
               // even at builders:0 where no rbuilder container runs — otherwise helix
               // wouldn't know the spammer's builder and couldn't process it optimistically.
-              builderPubkeys: BUILDER_KEYS.slice(0, Math.max(builders, 1)).map((b) => b.pubkey),
+              builderPubkeys: [
+                ...BUILDER_KEYS.slice(0, Math.max(builders, 1)).map((b) => b.pubkey),
+                ...(opts.extraBuilderPubkeys ?? []),
+              ],
             },
           },
         ],
