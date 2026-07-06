@@ -1,6 +1,6 @@
 import { basename, fromFileUrl, isAbsolute, join, toFileUrl } from "jsr:@std/path@^1.0.0";
 import { emit } from "./emit.ts";
-import type { Recipe } from "./types.ts";
+import type { Recipe, Script } from "./types.ts";
 
 import { DECKER_ROOT } from "./root.ts";
 const RECIPES_DIR = new URL("../recipes/", import.meta.url);
@@ -19,6 +19,24 @@ export async function loadRecipe(target: string): Promise<{ name: string; recipe
   const mod = await import(toFileUrl(path).href);
   if (!mod.recipe) throw new Error(`${path} must export 'recipe: Recipe'`);
   return { name, recipe: mod.recipe };
+}
+
+// Load standalone script modules (referenced by a decker.ts manifest or a
+// --script flag). Each is wrapped and named after its file so the `scripts`
+// section labels the run by filename instead of a generic "script".
+export async function loadScripts(paths: string[]): Promise<Script[]> {
+  const out: Script[] = [];
+  for (const p of paths) {
+    const path = await Deno.realPath(p);
+    const mod = await import(toFileUrl(path).href);
+    if (typeof mod.script !== "function") {
+      throw new Error(`${p} must export 'script: Script'`);
+    }
+    const script: Script = (recipe) => mod.script(recipe);
+    Object.defineProperty(script, "name", { value: basename(path).replace(/\.ts$/, "") });
+    out.push(script);
+  }
+  return out;
 }
 
 export function artifactsHostPath(recipe: Recipe): string {

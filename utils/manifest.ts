@@ -8,6 +8,9 @@ export type DeckerProject = {
     into?: string;
   };
   recipe: string;
+  // Script modules appended after the recipe's own scripts. Paths resolve
+  // relative to this manifest; each module must export `script: Script`.
+  scripts?: string[];
   target?: {
     pods?: string;
     processes?: string;

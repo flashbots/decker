@@ -30,6 +30,7 @@ export const command = new Command()
   .description("Start and attach to a recipe (take down with Ctrl+C)")
   .option("--pods <renderer:string>", "Override recipe target for pods")
   .option("--processes <renderer:string>", "Override recipe target for processes")
+  .option("--script <path:string>", "Append a script module to the recipe (repeatable)", { collect: true })
   .arguments("[input:string]")
   .action(async (opts, arg?: string) => {
     const override: TargetOverride = { pods: opts.pods, processes: opts.processes };
@@ -38,10 +39,10 @@ export const command = new Command()
       const noop = () => {};
       Deno.addSignalListener("SIGINT", noop);
       Deno.addSignalListener("SIGTERM", noop);
-      Deno.exit(await upProject("start", input.path));
+      Deno.exit(await upProject("start", input.path, opts.script));
     }
 
-    const out = await upRecipeFile(input.ref, override);
+    const out = await upRecipeFile(input.ref, override, { scripts: opts.script });
     if (out.code !== 0) Deno.exit(out.code);
     await advertise(input.ref, out);
 

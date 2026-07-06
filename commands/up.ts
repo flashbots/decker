@@ -1,6 +1,6 @@
 import { Command } from "jsr:@cliffy/command@^1.0.0-rc.7";
-import { isAbsolute, join, toFileUrl } from "jsr:@std/path@^1.0.0";
-import { generateArtifacts, loadRecipe, missingBinaries } from "../utils/build.ts";
+import { dirname, isAbsolute, join, toFileUrl } from "jsr:@std/path@^1.0.0";
+import { generateArtifacts, loadRecipe, loadScripts, missingBinaries } from "../utils/build.ts";
 import { cleanRuntime, emit } from "../utils/emit.ts";
 import { ensureBinaries } from "../utils/binary-build.ts";
 import { ensureImages } from "../utils/image-build.ts";
@@ -66,12 +66,21 @@ function applyTargetOverride(recipe: Recipe, override?: TargetOverride): Recipe 
   };
 }
 
-export async function upProject(sub: "up" | "start", projectPath: string): Promise<number> {
+export async function upProject(sub: "up" | "start", projectPath: string, scripts: string[] = []): Promise<number> {
   const m = await loadManifest(projectPath);
   const into = await ensureClone(m.project);
   const extra: string[] = [];
   if (m.project.target?.pods) extra.push("--pods", m.project.target.pods);
   if (m.project.target?.processes) extra.push("--processes", m.project.target.processes);
+  // Scripts are functions, so they can't ride the re-exec into the clone's CLI
+  // as values — forward them as --script paths for the child to import. The
+  // manifest's own entries resolve against the manifest's directory; extra ones
+  // (from our --script flags) pass through as-is, since cwd is inherited.
+  const manifestDir = dirname(m.path);
+  for (const s of m.project.scripts ?? []) {
+    extra.push("--script", isAbsolute(s) ? s : join(manifestDir, s));
+  }
+  for (const s of scripts) extra.push("--script", s);
   const proc = new Deno.Command("deno", {
     args: ["run", "-A", `${into}/cli.ts`, sub, ...extra, m.project.recipe],
     stdin: "inherit",
@@ -90,13 +99,17 @@ export type UpOutcome = {
 };
 
 // up a recipe identified by name or .ts path (loads it, then upRecipe).
+// opts.scripts are module paths appended after the recipe's own scripts —
+// how a decker.ts manifest's `scripts` reach the recipe (see upProject).
 export async function upRecipeFile(
   ref: string,
   override?: TargetOverride,
-  opts: { attached?: boolean; runtimeDir?: string } = {},
+  opts: { attached?: boolean; runtimeDir?: string; scripts?: string[] } = {},
 ): Promise<UpOutcome> {
   const { name, recipe } = await loadRecipe(ref);
-  return await upRecipe(name, recipe, override, opts);
+  const extra = opts.scripts?.length ? await loadScripts(opts.scripts) : [];
+  const merged = extra.length ? { ...recipe, scripts: [...(recipe.scripts ?? []), ...extra] } : recipe;
+  return await upRecipe(name, merged, override, opts);
 }
 
 // up an in-memory recipe (no file). Scripts use this to run a parameterized
@@ -235,10 +248,10 @@ export async function upRecipe(
 export async function up(
   arg?: string,
   override?: TargetOverride,
-  opts: { attached?: boolean; runtimeDir?: string } = {},
+  opts: { attached?: boolean; runtimeDir?: string; scripts?: string[] } = {},
 ): Promise<number> {
   const input = await resolveInput(arg);
-  if (input.kind === "project") return await upProject("up", input.path);
+  if (input.kind === "project") return await upProject("up", input.path, opts.scripts);
   return (await upRecipeFile(input.ref, override, opts)).code;
 }
 
@@ -246,14 +259,15 @@ export const command = new Command()
   .description("Start a recipe and detach")
   .option("--pods <renderer:string>", "Override recipe target for pods")
   .option("--processes <renderer:string>", "Override recipe target for processes")
+  .option("--script <path:string>", "Append a script module to the recipe (repeatable)", { collect: true })
   .arguments("[input:string]")
   .action(async (opts, arg?: string) => {
     const override: TargetOverride = { pods: opts.pods, processes: opts.processes };
     const input = await resolveInput(arg);
     if (input.kind === "project") {
-      Deno.exit(await upProject("up", input.path));
+      Deno.exit(await upProject("up", input.path, opts.script));
     }
-    const out = await upRecipeFile(input.ref, override);
+    const out = await upRecipeFile(input.ref, override, { scripts: opts.script });
     if (out.code === 0) printSummary(out.renderers, out.paths, out.recipe);
     Deno.exit(out.code);
   });
