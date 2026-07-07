@@ -1,4 +1,5 @@
 import type { Recipe } from "../utils/types.ts";
+import { pipelineCheck } from "../scripts/pipeline-check.ts";
 import { relayWarmup } from "../scripts/relay-warmup.ts";
 
 // reth + rbuilder run as a single host binary (`reth-rbuilder`); everything else
@@ -13,6 +14,9 @@ export const recipe: Recipe = {
     relayWarmup({
       relays: [{ container: "mev-boost-relay-1" }],
     }),
+    // Post-up smoke test: sends a test tx and, on failure, names the suspect
+    // component with its own error (see scripts/pipeline-check.ts).
+    pipelineCheck(),
   ],
   pods: [
     {
@@ -92,7 +96,7 @@ export const recipe: Recipe = {
         {
           name: "blobscan-web",
           prototype: "blobscan-web",
-          refs: { postgres: "blobscan-pg" },
+          refs: { postgres: "blobscan-pg", redis: "blobscan-redis" },
         },
         {
           name: "blobscan-indexer",
@@ -109,6 +113,11 @@ export const recipe: Recipe = {
       name: "el-1",
       prototype: "reth-rbuilder",
       refs: { beacon: "beacon-1", relay: "mev-boost-relay-1" },
+      // Local hacking: point at your own build to skip the clone+build pipeline.
+      // Build it in your own checkout (NOT cache/sources/rbuilder — decker
+      // resets that to origin on rebuild, wiping local edits):
+      //   cargo build --release --bin reth-rbuilder
+      // binary: "/in/your/filesystem/rbuilder/target/release/reth-rbuilder",
     },
   ],
 };

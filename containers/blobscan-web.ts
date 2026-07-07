@@ -11,13 +11,17 @@ export const ports: Ports = { http: HTTP_PORT };
 export const webui = { label: "Blob explorer (Blobscan)" };
 
 // Blobscan web UI. Reads from the same Postgres the API/indexer populate.
-// Refs: postgres (database "blobscan").
+// Refs: postgres (database "blobscan") and redis (without REDIS_URI the image
+// falls back to localhost:6379 and error-spams when redis lives elsewhere).
 export function buildContainer(def: ContainerDef, ctx: Ctx): ContainerResult {
   const postgres = def.refs?.postgres;
+  const redis = def.refs?.redis;
   if (!postgres) throw new Error(`blobscan-web ${def.name}: missing refs.postgres`);
+  if (!redis) throw new Error(`blobscan-web ${def.name}: missing refs.redis`);
 
   const port = portNum((def.config?.ports as Ports | undefined)?.http ?? ports.http);
   const dbUrl = pgUrl(ctx, postgres, "blobscan");
+  const redisUri = `redis://${new URL(ctx.url(redis, "redis")).host}`;
 
   return {
     container: {
@@ -25,6 +29,7 @@ export function buildContainer(def: ContainerDef, ctx: Ctx): ContainerResult {
       env: {
         DATABASE_URL: dbUrl,
         DIRECT_URL: dbUrl,
+        REDIS_URI: redisUri,
         NEXT_PUBLIC_NETWORK_NAME: "devnet",
         SECRET_KEY,
         POSTGRES_STORAGE_ENABLED: "true",

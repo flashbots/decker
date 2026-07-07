@@ -6,8 +6,8 @@ import { ensureBinaries } from "../utils/binary-build.ts";
 import { ensureImages } from "../utils/image-build.ts";
 import { DEFAULT_MANIFEST, ensureClone, loadManifest } from "../utils/manifest.ts";
 import { lookup, makeCtx } from "../utils/resolve.ts";
-import { dim, done, fail, note, red, rule, step, summary } from "../utils/term.ts";
-import type { ImageEngine, Recipe, Renderer, RendererPaths } from "../utils/types.ts";
+import { accent, bold, dim, done, fail, note, red, rule, step, summary, warn } from "../utils/term.ts";
+import { type ImageEngine, portNum, type Ports, type Recipe, type Renderer, type RendererPaths } from "../utils/types.ts";
 
 import { DECKER_ROOT } from "../utils/root.ts";
 const RUNTIME_DIR = `${DECKER_ROOT}/runtime`;
@@ -29,6 +29,26 @@ export async function resolveInput(arg?: string): Promise<Input> {
     throw new Error(`${arg} must export 'recipe' or 'project'`);
   }
   return { kind: "recipe", ref: arg };
+}
+
+// Every service with its host ports (pods expose hostPort == containerPort, and
+// processes listen on localhost directly). Prototype defaults merged with the
+// recipe's per-container port overrides, same as the buildContainer convention.
+export function printServices(recipe: Recipe) {
+  rule("services");
+  const advertised = [
+    ...recipe.pods.flatMap((p) => p.containers),
+    ...(recipe.processes ?? []),
+  ];
+  for (const c of advertised) {
+    const proto = lookup(c.prototype);
+    const ports: Ports = { ...proto.ports, ...((c.config?.ports as Ports | undefined) ?? {}) };
+    const entries = Object.entries(ports);
+    console.log(`  ${bold(accent(c.name))}${entries.length === 0 ? dim("  (no ports)") : ""}`);
+    for (const [name, spec] of entries) {
+      console.log(`    ${name.padEnd(10)} ${warn(String(portNum(spec)))}`);
+    }
+  }
 }
 
 export function printSummary(renderers: Renderer[], paths: RendererPaths, recipe?: Recipe) {
@@ -104,7 +124,7 @@ export type UpOutcome = {
 export async function upRecipeFile(
   ref: string,
   override?: TargetOverride,
-  opts: { attached?: boolean; runtimeDir?: string; scripts?: string[] } = {},
+  opts: { attached?: boolean; runtimeDir?: string; scripts?: string[]; summarize?: boolean } = {},
 ): Promise<UpOutcome> {
   const { name, recipe } = await loadRecipe(ref);
   const extra = opts.scripts?.length ? await loadScripts(opts.scripts) : [];
@@ -118,7 +138,7 @@ export async function upRecipe(
   name: string,
   recipeIn: Recipe,
   override?: TargetOverride,
-  opts: { attached?: boolean; runtimeDir?: string } = {},
+  opts: { attached?: boolean; runtimeDir?: string; summarize?: boolean } = {},
 ): Promise<UpOutcome> {
   const runtimeDir = opts.runtimeDir ?? RUNTIME_DIR;
   const recipe = applyTargetOverride(recipeIn, override);
@@ -216,21 +236,6 @@ export async function upRecipe(
     done(sp);
   }
 
-  if ((recipe.scripts ?? []).length > 0) {
-    rule("scripts");
-    for (const script of recipe.scripts ?? []) {
-      const label = script.name || "script";
-      const t = performance.now();
-      try {
-        await script(recipe);
-        note("✓", label, t);
-      } catch (e) {
-        console.error(red(`✗ ${label} failed: ${(e as Error).message}`));
-        return { code: 1, renderers, paths, recipe };
-      }
-    }
-  }
-
   for (const r of procs) {
     rule(r.slot);
     const t = performance.now();
@@ -240,6 +245,34 @@ export async function upRecipe(
       return { code, renderers, paths, recipe };
     }
     note("✓", `${r.name} started`, t);
+  }
+
+  // Ports/URLs print before the scripts run, so they're at hand while a
+  // long-running script (or one that fails) holds the terminal.
+  if (opts.summarize) {
+    printServices(recipe);
+    printSummary(renderers, paths, recipe);
+  }
+
+  // Scripts run once everything is up — pods and processes alike. A script
+  // that needs a specific moment (e.g. relay-warmup's pre-genesis window)
+  // waits for it itself.
+  if ((recipe.scripts ?? []).length > 0) {
+    rule("scripts");
+    for (const script of recipe.scripts ?? []) {
+      const label = script.name || "script";
+      const t = performance.now();
+      // Static marker, not the step() spinner: scripts print their own output
+      // below this line, which a same-line spinner redraw would garble.
+      note("⏳", label);
+      try {
+        await script(recipe);
+        note("✓", label, t);
+      } catch (e) {
+        console.error(red(`✗ ${label} failed: ${(e as Error).message}`));
+        return { code: 1, renderers, paths, recipe };
+      }
+    }
   }
 
   return { code: 0, renderers, paths, recipe };
@@ -267,7 +300,6 @@ export const command = new Command()
     if (input.kind === "project") {
       Deno.exit(await upProject("up", input.path, opts.script));
     }
-    const out = await upRecipeFile(input.ref, override, { scripts: opts.script });
-    if (out.code === 0) printSummary(out.renderers, out.paths, out.recipe);
+    const out = await upRecipeFile(input.ref, override, { scripts: opts.script, summarize: true });
     Deno.exit(out.code);
   });

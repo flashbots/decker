@@ -95,7 +95,7 @@ export const recipe: Recipe = {
         {
           name: "blobscan-web",
           prototype: "blobscan-web",
-          refs: { postgres: "blobscan-pg" },
+          refs: { postgres: "blobscan-pg", redis: "blobscan-redis" },
         },
         {
           name: "blobscan-indexer",

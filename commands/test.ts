@@ -20,7 +20,7 @@ import {
 } from "npm:ethers@^6.13.0";
 import { accent, dim, err, success, warn } from "../utils/term.ts";
 
-const STATIC_PREFUNDED = [
+export const STATIC_PREFUNDED = [
   "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
   "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d",
 ];
@@ -98,7 +98,7 @@ async function signBlobTx(wallet: Wallet, to: string, nonce: number, cid: bigint
   return concat(["0x03", wrapper]);
 }
 
-async function signTx(
+export async function signTx(
   type: TxType,
   wallet: Wallet,
   to: string,
@@ -130,11 +130,11 @@ async function signBuilderNetHeader(wallet: Wallet, body: string): Promise<strin
   return `${wallet.address}:${sig}`;
 }
 
-type RpcClient = {
+export type RpcClient = {
   call<T>(method: string, params: unknown[]): Promise<T>;
 };
 
-function makeClient(url: string, wallet: Wallet): RpcClient {
+export function makeClient(url: string, wallet: Wallet): RpcClient {
   let id = 0;
   return {
     async call<T>(method: string, params: unknown[]): Promise<T> {
@@ -152,29 +152,29 @@ function makeClient(url: string, wallet: Wallet): RpcClient {
   };
 }
 
-async function chainId(c: RpcClient): Promise<bigint> {
+export async function chainId(c: RpcClient): Promise<bigint> {
   return BigInt(await c.call<string>("eth_chainId", []));
 }
 
-async function pendingNonce(c: RpcClient, addr: AddressLike): Promise<number> {
+export async function pendingNonce(c: RpcClient, addr: AddressLike): Promise<number> {
   return parseInt(await c.call<string>("eth_getTransactionCount", [addr, "pending"]), 16);
 }
 
-async function sendRawTx(c: RpcClient, raw: string): Promise<string> {
+export async function sendRawTx(c: RpcClient, raw: string): Promise<string> {
   return await c.call<string>("eth_sendRawTransaction", [raw]);
 }
 
-type Receipt = {
+export type Receipt = {
   blockNumber: string;
   gasUsed: string;
   status: string;
 };
 
-async function getReceipt(c: RpcClient, hash: string): Promise<Receipt | null> {
+export async function getReceipt(c: RpcClient, hash: string): Promise<Receipt | null> {
   return await c.call<Receipt | null>("eth_getTransactionReceipt", [hash]);
 }
 
-async function getBlockExtraData(c: RpcClient, blockNumberHex: string): Promise<string> {
+export async function getBlockExtraData(c: RpcClient, blockNumberHex: string): Promise<string> {
   const block = await c.call<{ extraData: string } | null>(
     "eth_getBlockByNumber",
     [blockNumberHex, false],
@@ -182,7 +182,7 @@ async function getBlockExtraData(c: RpcClient, blockNumberHex: string): Promise<
   return block?.extraData ?? "0x";
 }
 
-function tryUtf8(hex: string): string {
+export function tryUtf8(hex: string): string {
   try {
     return toUtf8String(getBytes(hex));
   } catch {
