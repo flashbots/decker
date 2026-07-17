@@ -1,5 +1,5 @@
 import { Command } from "jsr:@cliffy/command@^1.0.0-rc.7";
-import { buildOne, generateArtifacts, loadRecipe, missingBinaries } from "../utils/build.ts";
+import { artifactsLabel, buildOne, generateArtifacts, loadRecipe, missingBinaries } from "../utils/build.ts";
 import { cleanRuntime } from "../utils/emit.ts";
 import { done, fail, step, warn } from "../utils/term.ts";
 
@@ -28,7 +28,7 @@ export const command = new Command()
         fail(sArt, (e as Error).message);
         Deno.exit(1);
       }
-      done(sArt, recipe.artifacts ? `${recipe.artifacts.generator}/${recipe.artifacts.fork}` : "no artifacts");
+      done(sArt, artifactsLabel(recipe));
       const sp = step(`rendering ${r}`);
       const { name, binaries, binaryBuilds } = await buildOne(r);
       done(sp, `manifests/${name}/`);

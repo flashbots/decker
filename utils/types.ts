@@ -122,7 +122,18 @@ export type L1ArtifactsSpec = {
   genesisDelaySeconds?: number;
 };
 
-export type ArtifactsSpec = L1ArtifactsSpec;
+// OP-stack: an L1 (with the OP system contracts predeployed) plus the L2 genesis
+// + rollup config. The L1 consensus fork and the L2 OP fork are chosen
+// independently. l1Fork ∈ {electra, fulu}; l2Fork ∈ {isthmus, jovian}.
+export type OpstackArtifactsSpec = {
+  generator: "opstack";
+  l1Fork: string;
+  l2Fork: string;
+  blockTimeSeconds?: number;
+  genesisDelaySeconds?: number;
+};
+
+export type ArtifactsSpec = L1ArtifactsSpec | OpstackArtifactsSpec;
 
 export type Script = (recipe: Recipe) => Promise<void> | void;
 

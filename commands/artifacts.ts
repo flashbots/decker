@@ -1,5 +1,5 @@
 import { Command } from "jsr:@cliffy/command@^1.0.0-rc.7";
-import { artifactsHostPath, generateArtifacts, loadRecipe } from "../utils/build.ts";
+import { artifactsHostPath, artifactsLabel, generateArtifacts, loadRecipe } from "../utils/build.ts";
 import { done, fail, step } from "../utils/term.ts";
 
 export const command = new Command()
@@ -15,5 +15,5 @@ export const command = new Command()
       fail(sp, (e as Error).message);
       Deno.exit(1);
     }
-    done(sp, recipe.artifacts ? `${recipe.artifacts.generator}/${recipe.artifacts.fork} → ${out}` : "no artifacts");
+    done(sp, recipe.artifacts ? `${artifactsLabel(recipe)} → ${out}` : "no artifacts");
   });

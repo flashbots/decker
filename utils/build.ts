@@ -44,6 +44,14 @@ export function artifactsHostPath(recipe: Recipe): string {
   return isAbsolute(p) ? p : join(DECKER_ROOT, p);
 }
 
+// A short "generator/fork" label for the `up`/`build`/`artifacts` status lines.
+export function artifactsLabel(recipe: Recipe): string {
+  const a = recipe.artifacts;
+  if (!a) return "no artifacts";
+  const fork = a.generator === "opstack" ? `${a.l1Fork}+${a.l2Fork}` : a.fork;
+  return `${a.generator}/${fork}`;
+}
+
 export async function generateArtifacts(recipe: Recipe): Promise<void> {
   if (!recipe.artifacts) return;
   const out = artifactsHostPath(recipe);

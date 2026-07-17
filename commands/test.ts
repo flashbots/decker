@@ -200,15 +200,22 @@ export type TestOpts = {
   type: TxType;
 };
 
+// A bare port (e.g. "9545") is shorthand for http://localhost:9545; anything
+// else (a full URL) passes through untouched.
+export function normalizeRpc(s: string): string {
+  return /^\d+$/.test(s) ? `http://localhost:${s}` : s;
+}
+
 export async function runTest(opts: TestOpts): Promise<number> {
-  const elRpcUrl = opts.elRpc || opts.rpc;
+  const rpcUrl = normalizeRpc(opts.rpc);
+  const elRpcUrl = normalizeRpc(opts.elRpc) || rpcUrl;
   const wallet = new Wallet(STATIC_PREFUNDED[1]);
   const toAddress = new Wallet(STATIC_PREFUNDED[0]).address;
 
   if (opts.insecure) console.warn(warn("note: --insecure is a no-op on Deno; set DENO_CERT to trust a self-signed CA"));
 
-  const target = makeClient(opts.rpc, wallet);
-  const el = opts.rpc === elRpcUrl ? target : makeClient(elRpcUrl, wallet);
+  const target = makeClient(rpcUrl, wallet);
+  const el = rpcUrl === elRpcUrl ? target : makeClient(elRpcUrl, wallet);
 
   const cid = await chainId(el);
   console.log(`${dim("Chain ID:")} ${accent(String(cid))}`);
@@ -274,10 +281,10 @@ export async function runTest(opts: TestOpts): Promise<number> {
 
 export const command = new Command()
   .description("Send a test transaction (default: http://localhost:8545)")
-  .option("--rpc <url:string>", "Target RPC URL for sending transactions", {
+  .option("--rpc <url:string>", "Target RPC URL for sending transactions (a bare port ⇒ http://localhost:PORT)", {
     default: "http://localhost:8545",
   })
-  .option("--el-rpc <url:string>", "EL RPC URL for chain queries (default: same as --rpc)", {
+  .option("--el-rpc <url:string>", "EL RPC URL for chain queries (a bare port ⇒ http://localhost:PORT; default: same as --rpc)", {
     default: "",
   })
   .option("--timeout <duration:string>", "Timeout for waiting for receipt (0 = no timeout)", {

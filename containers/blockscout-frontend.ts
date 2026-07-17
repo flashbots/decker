@@ -23,6 +23,11 @@ export function buildContainer(def: ContainerDef, ctx: Ctx): ContainerResult {
   const port = portNum((def.config?.ports as Ports | undefined)?.http ?? ports.http);
   const apiHost = new URL(ctx.url(backend, "http")).host; // server-side proxy target
   const elPort = new URL(ctx.url(el, "rpc")).port; // browser-side RPC
+  // Per-instance so an L1 and an L2 explorer read correctly (chain id, name, and
+  // whether a beacon chain exists — an L2 rollup has none).
+  const networkId = (def.config?.networkId as string | undefined) ?? NETWORK_ID;
+  const networkName = (def.config?.networkName as string | undefined) ?? "decker";
+  const hasBeaconChain = (def.config?.hasBeaconChain as boolean | undefined) ?? true;
 
   return {
     container: {
@@ -37,14 +42,14 @@ export function buildContainer(def: ContainerDef, ctx: Ctx): ContainerResult {
         NEXT_PUBLIC_APP_PROTOCOL: "http",
         NEXT_PUBLIC_APP_HOST: "localhost",
         NEXT_PUBLIC_APP_PORT: String(port),
-        NEXT_PUBLIC_NETWORK_NAME: "decker",
-        NEXT_PUBLIC_NETWORK_ID: NETWORK_ID,
+        NEXT_PUBLIC_NETWORK_NAME: networkName,
+        NEXT_PUBLIC_NETWORK_ID: networkId,
         NEXT_PUBLIC_NETWORK_RPC_URL: `http://localhost:${elPort}`,
         NEXT_PUBLIC_AD_BANNER_PROVIDER: "none",
         NEXT_PUBLIC_AD_TEXT_PROVIDER: "none",
         NEXT_PUBLIC_IS_TESTNET: "true",
         NEXT_PUBLIC_GAS_TRACKER_ENABLED: "true",
-        NEXT_PUBLIC_HAS_BEACON_CHAIN: "true",
+        NEXT_PUBLIC_HAS_BEACON_CHAIN: String(hasBeaconChain),
         NEXT_PUBLIC_NETWORK_VERIFICATION_TYPE: "validation",
       },
       ports: { http: port },

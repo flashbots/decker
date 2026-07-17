@@ -1,6 +1,6 @@
 import { Command } from "jsr:@cliffy/command@^1.0.0-rc.7";
 import { dirname, isAbsolute, join, toFileUrl } from "jsr:@std/path@^1.0.0";
-import { generateArtifacts, loadRecipe, loadScripts, missingBinaries } from "../utils/build.ts";
+import { artifactsLabel, generateArtifacts, loadRecipe, loadScripts, missingBinaries } from "../utils/build.ts";
 import { cleanRuntime, emit } from "../utils/emit.ts";
 import { ensureBinaries } from "../utils/binary-build.ts";
 import { ensureImages } from "../utils/image-build.ts";
@@ -65,7 +65,10 @@ export function printSummary(renderers: Renderer[], paths: RendererPaths, recipe
       for (const def of pod.containers) {
         const proto = lookup(def.prototype);
         if (!proto.webui) continue;
-        entries.push([proto.webui.label, ctx.url(def.name, proto.webui.port ?? "http")]);
+        // A recipe may override the label per instance (e.g. distinguishing an
+        // L1 vs L2 explorer that share a prototype).
+        const label = (def.config?.webuiLabel as string | undefined) ?? proto.webui.label;
+        entries.push([label, ctx.url(def.name, proto.webui.port ?? "http")]);
       }
     }
   }
@@ -157,7 +160,7 @@ export async function upRecipe(
       fail(sArt, (e as Error).message);
       return { code: 1, renderers, paths, recipe };
     }
-    done(sArt, `${recipe.artifacts.generator}/${recipe.artifacts.fork}`);
+    done(sArt, artifactsLabel(recipe));
   }
 
   const sEmit = step("rendering manifests");

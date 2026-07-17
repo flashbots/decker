@@ -1,7 +1,7 @@
 import { ssz } from "npm:@lodestar/types@^1.30.0";
 import { sha256 } from "npm:@noble/hashes@^1.4.0/sha2";
 import { loadBlsKeys } from "./bls-keys.ts";
-import { computeElGenesisHash } from "./el-block-hash.ts";
+import { computeElGenesisHash, L1_STATE_ROOT } from "./el-block-hash.ts";
 import syncCommitteeData from "./sync-committee.json" with { type: "json" };
 
 const fromHex = (h: string): Uint8Array => {
@@ -14,7 +14,6 @@ const GENESIS_VALIDATORS_ROOT = fromHex("9624293efb019b5252a8be86736907ef1cd263c
 const DENEB_FORK_VERSION = fromHex("20000093");
 const ELECTRA_FORK_VERSION = fromHex("20000094");
 const FULU_FORK_VERSION = fromHex("20000095");
-const EL_STATE_ROOT = fromHex("48231728167f36a5cf6e8af0e95718a6f3f214a59a43d0d9b30f82a3013c8ba1");
 const EMPTY_TRIE_ROOT = fromHex("56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421");
 
 const EFFECTIVE_BALANCE = 32_000_000_000;
@@ -38,11 +37,17 @@ function emptyDepositRoot(): Uint8Array {
 export type GenesisSszOpts = {
   genesisTimeSeconds: number;
   fork: string;
+  // EL genesis state root embedded in `latestExecutionPayloadHeader`. Defaults
+  // to the plain-L1 root; the OP-stack L1 (OP contracts in the alloc) passes its
+  // own. Must be the same root fed to the EL client, or CL/EL disagree on the
+  // genesis execution block hash and the chain never advances.
+  elStateRoot?: Uint8Array;
 };
 
 export async function renderGenesisSsz(opts: GenesisSszOpts): Promise<Uint8Array> {
   const blsKeys = await loadBlsKeys();
-  const elHash = computeElGenesisHash(opts.genesisTimeSeconds);
+  const elStateRoot = opts.elStateRoot ?? L1_STATE_ROOT;
+  const elHash = computeElGenesisHash(opts.genesisTimeSeconds, elStateRoot);
 
   const sszFork = opts.fork === "fulu" ? ssz.fulu : ssz.electra;
   const state = sszFork.BeaconState.defaultValue();
@@ -93,7 +98,7 @@ export async function renderGenesisSsz(opts: GenesisSszOpts): Promise<Uint8Array
   state.nextSyncCommittee.aggregatePubkey = syncAggregate;
 
   const eph = state.latestExecutionPayloadHeader;
-  eph.stateRoot = EL_STATE_ROOT;
+  eph.stateRoot = elStateRoot;
   eph.receiptsRoot = EMPTY_TRIE_ROOT;
   eph.gasLimit = GAS_LIMIT;
   eph.timestamp = opts.genesisTimeSeconds;

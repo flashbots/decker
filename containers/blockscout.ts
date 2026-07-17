@@ -8,11 +8,15 @@ export const ports: Ports = { http: HTTP_PORT };
 
 // Blockscout backend (the API + indexer). Mirrors the Kurtosis ethereum-package
 // config. Refs:
-//   el       — execution node (reth → "erigon" JSON-RPC variant; needs trace/debug)
+//   el       — execution node (needs trace/debug)
 //   postgres — its own DB (database "blockscout")
 //   verif    — the smart-contract verifier sidecar
 // All three are reached server-side over pod DNS. The user-facing UI is the
 // separate blockscout-frontend container.
+//
+// `config.variant` picks the JSON-RPC dialect for internal-tx tracing: "erigon"
+// (default) for reth/op-reth (parity/erigon trace API), "geth" for op-geth
+// (debug_trace*). Set it to match the referenced EL.
 export function buildContainer(def: ContainerDef, ctx: Ctx): ContainerResult {
   const el = def.refs?.el;
   const postgres = def.refs?.postgres;
@@ -22,6 +26,7 @@ export function buildContainer(def: ContainerDef, ctx: Ctx): ContainerResult {
   if (!verif) throw new Error(`blockscout ${def.name}: missing refs.verif`);
 
   const port = portNum((def.config?.ports as Ports | undefined)?.http ?? ports.http);
+  const variant = (def.config?.variant as string | undefined) ?? "erigon";
   const elRpc = `${ctx.url(el, "rpc")}/`;
 
   return {
@@ -33,7 +38,7 @@ export function buildContainer(def: ContainerDef, ctx: Ctx): ContainerResult {
         'bin/blockscout eval "Elixir.Explorer.ReleaseTasks.create_and_migrate()" && bin/blockscout start',
       ],
       env: {
-        ETHEREUM_JSONRPC_VARIANT: "erigon", // reth speaks the erigon trace API
+        ETHEREUM_JSONRPC_VARIANT: variant,
         ETHEREUM_JSONRPC_HTTP_URL: elRpc,
         ETHEREUM_JSONRPC_TRACE_URL: elRpc,
         DATABASE_URL: pgUrl(ctx, postgres, "blockscout"),
