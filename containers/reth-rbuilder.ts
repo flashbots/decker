@@ -9,8 +9,8 @@ import { rbuilderConfigFor } from "./rbuilder.ts";
 // it on first `up`, then caches the binary (see utils/binary-build.ts). Override
 // with `binary: "/path/to/reth-rbuilder"` on the process to skip the build.
 const BUILD: BinaryBuildSpec = {
-  repo: "https://github.com/faheelsattar/rbuilder",
-  ref: "faheel/reth-2.2-migration",
+  repo: "https://github.com/flashbots/rbuilder",
+  ref: "develop",
   // CMAKE_POLICY_VERSION_MINIMUM=3.5: a transitive C dep (runng-sys → nng) pins
   // an ancient cmake_minimum_required that CMake >= 4 rejects; this lets it
   // configure anyway. Harmless on older CMake (honored since 3.31).
