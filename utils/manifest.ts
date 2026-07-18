@@ -1,5 +1,6 @@
 import { isAbsolute, join, toFileUrl } from "jsr:@std/path@^1.0.0";
 import { done, fail, step } from "./term.ts";
+import type { PrototypeOverrides, Recipe, Script } from "./types.ts";
 
 export type DeckerProject = {
   decker: {
@@ -7,10 +8,19 @@ export type DeckerProject = {
     ref: string;
     into?: string;
   };
-  recipe: string;
+  // A recipe name/path to resolve in the clone, or an inline Recipe value.
+  recipe: string | Recipe;
   // Options for a factory recipe (one that exports `recipe: (options) => Recipe`).
   options?: Record<string, unknown>;
-  scripts?: string[];
+  // Add or override the prototypes that a recipe's containers/processes resolve
+  // by name — tweak a built-in (e.g. "reth") or introduce your own service.
+  prototypes?: PrototypeOverrides;
+  // Post-up hooks: your own `Script` functions, imported into the manifest and
+  // listed here. When set, they REPLACE the recipe's own scripts. These (and an
+  // inline recipe/prototypes) can't ride the re-exec into the clone's CLI as
+  // values, so project dispatch forwards the manifest path and the child
+  // re-imports it (see upProject).
+  scripts?: Script[];
   target?: {
     pods?: string;
     processes?: string;

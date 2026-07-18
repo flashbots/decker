@@ -176,6 +176,16 @@ export type Prototype = {
   webui?: WebUi;
 };
 
+// Prototypes contributed by a decker.ts manifest, keyed by the name recipe
+// containers/processes resolve against. Merged into the built-in registry (see
+// registerPrototypes): a new name is added, an existing one is overlaid
+// field-wise, and a name in both maps composes (pods → buildContainer, processes
+// → buildProcess). The pods/processes split mirrors a recipe's own sections.
+export type PrototypeOverrides = {
+  pods?: Record<string, Prototype>;
+  processes?: Record<string, Prototype>;
+};
+
 export type RendererSlot = "pods" | "processes";
 
 export type RenderCtx = {

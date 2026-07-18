@@ -3,7 +3,17 @@ import { join } from "jsr:@std/path@^1.0.0";
 import { hasPodmanSocket, REPO_ROOT, runDecker, withTmp } from "./helpers.ts";
 
 const FIXTURE = join(REPO_ROOT, "e2e", "fixtures", "minimal.ts");
+const FIXTURE_WITH_SCRIPT = join(REPO_ROOT, "e2e", "fixtures", "minimal-with-script.ts");
 const MARKER_SCRIPT = join(REPO_ROOT, "e2e", "fixtures", "marker-script.ts");
+
+async function exists(p: string): Promise<boolean> {
+  try {
+    await Deno.stat(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 Deno.test("up: --script with a missing file fails cleanly", async () => {
   await withTmp(async (root) => {
@@ -50,25 +60,40 @@ Deno.test({
   },
 });
 
-// The manifest's `scripts` survive the re-exec into the clone's CLI as --script
-// flags, so this exercises the full project dispatch chain. The manifest's
-// `into` points at the working tree itself (the "hack on the clone" dev flow —
-// already cloned, never touched) so the test runs THIS checkout's code, not the
-// committed ref a fresh clone would pin.
+// A manifest lists its scripts as imported function values. They can't ride the
+// re-exec into the clone's CLI as values, so project dispatch forwards the
+// manifest path and the child re-imports it — this exercises that whole chain.
+// The recipe here ships its OWN script; the manifest's `scripts` must REPLACE
+// it, so the recipe marker is never written while the manifest one is. The
+// manifest's `into` points at the working tree itself (the "hack on the clone"
+// dev flow — already cloned, never touched) so the test runs THIS checkout's
+// code, not the committed ref a fresh clone would pin.
 Deno.test({
-  name: "up: manifest scripts are appended to the recipe and run",
+  name: "up: manifest scripts replace the recipe's own and run",
   ignore: !(await hasPodmanSocket()),
   fn: async () => {
     await withTmp(async (root) => {
-      const env = { DECKER_ROOT: root };
+      const recipeMarker = join(root, "recipe.marker");
+      const manifestMarker = join(root, "manifest.marker");
+      const env = {
+        DECKER_ROOT: root,
+        RECIPE_SCRIPT_MARKER: recipeMarker,
+        MANIFEST_SCRIPT_MARKER: manifestMarker,
+      };
       await Deno.writeTextFile(
         join(root, "hello-script.ts"),
-        `export const script = () => console.log("hello from manifest script");\n`,
+        `export const helloScript = () => {
+  console.log("hello from manifest script");
+  const p = Deno.env.get("MANIFEST_SCRIPT_MARKER");
+  if (p) Deno.writeTextFileSync(p, "manifest-script-ran");
+};
+`,
       );
-      const manifest = `export const project = {
+      const manifest = `import { helloScript } from "./hello-script.ts";
+export const project = {
   decker: { source: ${JSON.stringify(REPO_ROOT)}, ref: "main", into: ${JSON.stringify(REPO_ROOT)} },
-  recipe: ${JSON.stringify(FIXTURE)},
-  scripts: ["./hello-script.ts"],
+  recipe: ${JSON.stringify(FIXTURE_WITH_SCRIPT)},
+  scripts: [helloScript],
 };
 `;
       await Deno.writeTextFile(join(root, "decker.ts"), manifest);
@@ -76,7 +101,9 @@ Deno.test({
         const up = await runDecker(["up"], { cwd: root, env });
         assertEquals(up.code, 0, up.out);
         assertStringIncludes(up.out, "hello from manifest script");
-        assertStringIncludes(up.out, "hello-script"); // labeled by filename
+        assertStringIncludes(up.out, "helloScript"); // labeled by the export name
+        assertEquals(await Deno.readTextFile(manifestMarker), "manifest-script-ran");
+        assert(!(await exists(recipeMarker)), "recipe's own script must be replaced, not run");
       } finally {
         const down = await runDecker(["down"], { cwd: root, env });
         assertEquals(down.code, 0, down.out);

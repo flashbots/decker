@@ -91,7 +91,7 @@ You can evolve `decker` in multiple layers and use in dev or CI setups of your p
 - **Generators:** Generate your own artifacts/configs dynamically
 - **Containers:** Write k8s-like blueprints or host processes
 - **Recipes:** Compose containers/processes into a single run
-- **Scripts:** Control recipe pre/post states and even launch child recipes — append your own to any recipe via `scripts` in your `decker.ts`
+- **Scripts:** Control recipe pre/post states and even launch child recipes — supply your own via `scripts` in your `decker.ts` (they replace the recipe's own)
 - **Renderers:** Run your recipe on any target (podman, docker, process-compose and anything you want)
 - **CLI:** Hack on the clone, run immediately with preinstalled binary
 

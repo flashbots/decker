@@ -38,6 +38,20 @@ export async function loadRecipe(
   return { name, recipe: exported as Recipe };
 }
 
+// A decker.ts manifest's `recipe` is either a name/path to resolve (as above) or
+// an already-built Recipe value. A value is used as-is under a generic name;
+// options only apply to a named factory recipe, so an inline recipe rejects them.
+export async function resolveRecipe(
+  recipe: string | Recipe,
+  options: RecipeOptions = {},
+): Promise<{ name: string; recipe: Recipe }> {
+  if (typeof recipe === "string") return await loadRecipe(recipe, options);
+  if (Object.keys(options).length > 0) {
+    throw new Error(`an inline recipe takes no options (got: ${Object.keys(options).join(", ")})`);
+  }
+  return { name: "recipe", recipe };
+}
+
 // Load standalone script modules (referenced by a decker.ts manifest or a
 // --script flag). Each is wrapped and named after its file so the `scripts`
 // section labels the run by filename instead of a generic "script".

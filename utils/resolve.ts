@@ -1,6 +1,6 @@
 import { isAbsolute, join } from "jsr:@std/path@^1.0.0";
 import { portNum } from "./types.ts";
-import type { ContainerDef, Ctx, HostCtx, Pod, ProcessDef, Prototype, Recipe } from "./types.ts";
+import type { ContainerDef, Ctx, HostCtx, Pod, ProcessDef, Prototype, PrototypeOverrides, Recipe } from "./types.ts";
 
 import { DECKER_ROOT } from "./root.ts";
 
@@ -35,6 +35,23 @@ export function lookup(p: string | Prototype): Prototype {
   const proto = PROTOS[p];
   if (!proto) throw new Error(`unknown prototype ${p}`);
   return proto;
+}
+
+// Add or override entries in the prototype registry from a decker.ts manifest's
+// `prototypes`. Each entry is overlaid field-wise on any existing prototype of
+// the same name, so an override can change just one aspect (e.g. a container's
+// image) while keeping the rest, and the same name in `pods` and `processes`
+// composes into one prototype. Call this before rendering, so later `lookup`s of
+// a recipe's string prototype names see the manifest's versions.
+export function registerPrototypes(overrides?: PrototypeOverrides): void {
+  if (!overrides) return;
+  const apply = (entries?: Record<string, Prototype>) => {
+    for (const [name, proto] of Object.entries(entries ?? {})) {
+      PROTOS[name] = { ...PROTOS[name], ...proto };
+    }
+  };
+  apply(overrides.pods);
+  apply(overrides.processes);
 }
 
 export type Located =
