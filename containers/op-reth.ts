@@ -20,6 +20,13 @@ function resolvedPorts(def: ContainerDef): Ports {
 
 export function buildContainer(def: ContainerDef, _ctx: Ctx): ContainerResult {
   const ps = resolvedPorts(def);
+  // With an external builder, join the bootnode so op-rbuilder peers and mempool
+  // txs gossip to the builder. reth resolves the DNS host in the enode itself, so
+  // (unlike op-geth) no getent shell dance is needed. Default: no discovery.
+  const bootnodeId = def.config?.bootnodeId as string | undefined;
+  const discovery = bootnodeId
+    ? ["--bootnodes", `enode://${bootnodeId}@bootnode:30303`, "--rollup.discovery.v4"]
+    : ["--disable-discovery"];
   return {
     container: {
       image: "us-docker.pkg.dev/oplabs-tools-artifacts/images/op-reth:v2.3.3",
@@ -50,7 +57,7 @@ export function buildContainer(def: ContainerDef, _ctx: Ctx): ContainerResult {
         // (same reason the L1 reth sets these; see containers/reth.ts).
         "--engine.persistence-threshold", "0",
         "--engine.memory-block-buffer-target", "0",
-        "--disable-discovery",
+        ...discovery,
       ],
       ports: ps,
       volumeMounts: [

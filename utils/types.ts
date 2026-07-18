@@ -129,7 +129,8 @@ export type OpstackArtifactsSpec = {
   generator: "opstack";
   l1Fork: string;
   l2Fork: string;
-  blockTimeSeconds?: number;
+  blockTimeSeconds?: number; // L1 slot time
+  l2BlockTimeSeconds?: number; // L2 rollup block time (rollup.json block_time; default 2)
   genesisDelaySeconds?: number;
 };
 

@@ -6,7 +6,15 @@ import { DECKER_ROOT } from "./root.ts";
 const RECIPES_DIR = new URL("../recipes/", import.meta.url);
 const GENERATORS_DIR = new URL("../generators/", import.meta.url);
 
-export async function loadRecipe(target: string): Promise<{ name: string; recipe: Recipe }> {
+// Options passed to a factory recipe. From the CLI (`--opt k=v`) or a decker.ts
+// `options` block, values arrive as strings; a factory called directly in TS may
+// get richer types. Factories coerce as needed.
+export type RecipeOptions = Record<string, unknown>;
+
+export async function loadRecipe(
+  target: string,
+  options: RecipeOptions = {},
+): Promise<{ name: string; recipe: Recipe }> {
   let path: string;
   let name: string;
   if (target.includes("/") || target.endsWith(".ts")) {
@@ -17,8 +25,17 @@ export async function loadRecipe(target: string): Promise<{ name: string; recipe
     name = target;
   }
   const mod = await import(toFileUrl(path).href);
-  if (!mod.recipe) throw new Error(`${path} must export 'recipe: Recipe'`);
-  return { name, recipe: mod.recipe };
+  const exported = mod.recipe;
+  if (exported === undefined) throw new Error(`${path} must export 'recipe' (a Recipe or (options) => Recipe)`);
+  // A recipe is either a static value or a factory. Only factories take options;
+  // handing options to a static recipe is a mistake, so surface it.
+  if (typeof exported === "function") {
+    return { name, recipe: (exported as (o: RecipeOptions) => Recipe)(options) };
+  }
+  if (Object.keys(options).length > 0) {
+    throw new Error(`recipe ${name} takes no options (got: ${Object.keys(options).join(", ")})`);
+  }
+  return { name, recipe: exported as Recipe };
 }
 
 // Load standalone script modules (referenced by a decker.ts manifest or a
@@ -78,10 +95,22 @@ export async function generateArtifacts(recipe: Recipe): Promise<void> {
 
 export async function buildOne(
   target: string,
+  options: RecipeOptions = {},
 ): Promise<{ name: string; binaries: string[]; binaryBuilds: string[] }> {
-  const { name, recipe } = await loadRecipe(target);
+  const { name, recipe } = await loadRecipe(target, options);
   const { binaries, binaryBuilds } = await emit(name, recipe);
   return { name, binaries, binaryBuilds: [...binaryBuilds.keys()] };
+}
+
+// Parse `--opt key=value` pairs (repeatable) into an options object.
+export function parseOpts(pairs: string[] = []): RecipeOptions {
+  const out: RecipeOptions = {};
+  for (const p of pairs) {
+    const eq = p.indexOf("=");
+    if (eq === -1) throw new Error(`bad --opt "${p}" (expected key=value)`);
+    out[p.slice(0, eq)] = p.slice(eq + 1);
+  }
+  return out;
 }
 
 export function missingBinaries(binaries: string[]): string[] {

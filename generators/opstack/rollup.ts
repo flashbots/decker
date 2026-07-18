@@ -17,6 +17,8 @@ export type RollupOpts = {
   l1Hash: Uint8Array;
   l2Hash: Uint8Array;
   l2TimeSeconds: number;
+  // L2 block time (op-node's sequencing cadence). Omitted → keep the template's.
+  blockTimeSeconds?: number;
   // Extra top-level fields (e.g. a fork's `<fork>_time`) merged in for a fork
   // that reuses another's rollup template.
   extra?: Record<string, unknown>;
@@ -27,6 +29,7 @@ export async function renderRollup(opts: RollupOpts): Promise<string> {
   r.genesis.l1.hash = toHex(opts.l1Hash);
   r.genesis.l2.hash = toHex(opts.l2Hash);
   r.genesis.l2_time = opts.l2TimeSeconds;
+  if (opts.blockTimeSeconds !== undefined) r.block_time = opts.blockTimeSeconds;
   if (opts.extra) Object.assign(r, opts.extra);
   return JSON.stringify(r, null, " ");
 }

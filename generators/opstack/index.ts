@@ -26,7 +26,8 @@ export type GenerateOpts = {
   l1Fork?: string;
   // L2 OP fork ("isthmus" | "jovian"). Defaults to "isthmus".
   l2Fork?: string;
-  blockTimeSeconds?: number;
+  blockTimeSeconds?: number; // L1 slot time
+  l2BlockTimeSeconds?: number; // L2 rollup block time (rollup.json block_time; default 2)
   genesisDelaySeconds?: number;
   // Test-only: pin the genesis time so the output is byte-reproducible against a
   // reference builder-playground run. Production leaves it unset.
@@ -108,6 +109,7 @@ export async function generate(opts: GenerateOpts): Promise<GenerateResult> {
       l1Hash,
       l2Hash,
       l2TimeSeconds: opTimestampSeconds,
+      blockTimeSeconds: opts.l2BlockTimeSeconds,
       extra: fork.rollupExtra,
     }),
   );

@@ -1,4 +1,5 @@
 import { Command } from "jsr:@cliffy/command@^1.0.0-rc.7";
+import { parseOpts } from "../utils/build.ts";
 import { dim, muted } from "../utils/term.ts";
 import { down } from "./down.ts";
 import { resolveInput, type TargetOverride, upProject, upRecipeFile } from "./up.ts";
@@ -8,6 +9,7 @@ export const command = new Command()
   .option("--pods <renderer:string>", "Override recipe target for pods")
   .option("--processes <renderer:string>", "Override recipe target for processes")
   .option("--script <path:string>", "Append a script module to the recipe (repeatable)", { collect: true })
+  .option("--opt <keyvalue:string>", "Pass an option to a factory recipe: key=value (repeatable)", { collect: true })
   .arguments("[input:string]")
   .action(async (opts, arg?: string) => {
     const override: TargetOverride = { pods: opts.pods, processes: opts.processes };
@@ -19,7 +21,11 @@ export const command = new Command()
       Deno.exit(await upProject("start", input.path, opts.script));
     }
 
-    const out = await upRecipeFile(input.ref, override, { scripts: opts.script, summarize: true });
+    const out = await upRecipeFile(input.ref, override, {
+      scripts: opts.script,
+      options: parseOpts(opts.opt),
+      summarize: true,
+    });
     if (out.code !== 0) Deno.exit(out.code);
     console.log("");
     console.log(`  ${muted("Ctrl+C to stop")}`);

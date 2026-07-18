@@ -1,5 +1,5 @@
 import { Command } from "jsr:@cliffy/command@^1.0.0-rc.7";
-import { artifactsLabel, buildOne, generateArtifacts, loadRecipe, missingBinaries } from "../utils/build.ts";
+import { artifactsLabel, buildOne, generateArtifacts, loadRecipe, missingBinaries, parseOpts } from "../utils/build.ts";
 import { cleanRuntime } from "../utils/emit.ts";
 import { done, fail, step, warn } from "../utils/term.ts";
 
@@ -15,11 +15,13 @@ async function listRecipes(): Promise<string[]> {
 
 export const command = new Command()
   .description("Build recipes into manifests/")
+  .option("--opt <keyvalue:string>", "Pass an option to a factory recipe: key=value (repeatable)", { collect: true })
   .arguments("[recipes...:string]")
-  .action(async (_, ...recipes: string[]) => {
+  .action(async (opts, ...recipes: string[]) => {
+    const options = parseOpts(opts.opt);
     const targets = recipes.length === 0 ? await listRecipes() : recipes;
     for (const r of targets) {
-      const { recipe } = await loadRecipe(r);
+      const { recipe } = await loadRecipe(r, options);
       await cleanRuntime();
       const sArt = step(`generating artifacts for ${r}`);
       try {
@@ -30,7 +32,7 @@ export const command = new Command()
       }
       done(sArt, artifactsLabel(recipe));
       const sp = step(`rendering ${r}`);
-      const { name, binaries, binaryBuilds } = await buildOne(r);
+      const { name, binaries, binaryBuilds } = await buildOne(r, options);
       done(sp, `manifests/${name}/`);
       // Binaries built from source land at `up` time; don't flag them missing here.
       const managed = new Set(binaryBuilds);

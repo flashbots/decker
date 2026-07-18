@@ -21,8 +21,14 @@ function resolvedPorts(def: ContainerDef): Ports {
 
 export function buildContainer(def: ContainerDef, _ctx: Ctx): ContainerResult {
   const ps = resolvedPorts(def);
-  // geth init seeds the datadir from the L2 genesis, then exec's the node. Single
-  // sequencer: --nodiscover, no peers — op-node builds blocks via the engine API.
+  // With an external builder, op-geth must peer with op-rbuilder over L2 P2P so
+  // the builder can sync — join the bootnode (geth can't resolve DNS in an enode,
+  // so resolve its IP at runtime). Default single-sequencer: no discovery.
+  const bootnodeId = def.config?.bootnodeId as string | undefined;
+  const discovery = bootnodeId
+    ? `--maxpeers 25 --bootnodes enode://${bootnodeId}@$(getent hosts bootnode | awk '{print $1}'):30303 --discovery.v4`
+    : "--maxpeers 0 --nodiscover";
+  // geth init seeds the datadir from the L2 genesis, then exec's the node.
   const script = [
     "geth init --datadir /data_opgeth --state.scheme hash /artifacts/l2-genesis.json",
     "&& exec geth",
@@ -34,7 +40,7 @@ export function buildContainer(def: ContainerDef, _ctx: Ctx): ContainerResult {
     "--ws --ws.addr 0.0.0.0",
     `--ws.port ${portNum(ps.ws)}`,
     "--ws.origins '*' --ws.api debug,eth,txpool,net,engine,miner",
-    "--syncmode full --maxpeers 0 --nodiscover",
+    `--syncmode full ${discovery}`,
     "--rpc.allow-unprotected-txs",
     "--authrpc.addr 0.0.0.0",
     `--authrpc.port ${portNum(ps.authrpc)}`,

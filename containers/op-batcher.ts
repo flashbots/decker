@@ -20,7 +20,7 @@ export function buildContainer(def: ContainerDef, ctx: Ctx): ContainerResult {
   const { l1, l2, rollup } = refs(def);
   return {
     container: {
-      image: "us-docker.pkg.dev/oplabs-tools-artifacts/images/op-batcher:v1.16.3",
+      image: "us-docker.pkg.dev/oplabs-tools-artifacts/images/op-batcher:v1.16.10",
       command: ["op-batcher"],
       args: [
         "--l1-eth-rpc", ctx.url(l1, "rpc"),

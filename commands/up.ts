@@ -1,6 +1,6 @@
 import { Command } from "jsr:@cliffy/command@^1.0.0-rc.7";
 import { dirname, isAbsolute, join, toFileUrl } from "jsr:@std/path@^1.0.0";
-import { artifactsLabel, generateArtifacts, loadRecipe, loadScripts, missingBinaries } from "../utils/build.ts";
+import { artifactsLabel, generateArtifacts, loadRecipe, loadScripts, missingBinaries, parseOpts, type RecipeOptions } from "../utils/build.ts";
 import { cleanRuntime, emit } from "../utils/emit.ts";
 import { ensureBinaries } from "../utils/binary-build.ts";
 import { ensureImages } from "../utils/image-build.ts";
@@ -104,6 +104,10 @@ export async function upProject(sub: "up" | "start", projectPath: string, script
     extra.push("--script", isAbsolute(s) ? s : join(manifestDir, s));
   }
   for (const s of scripts) extra.push("--script", s);
+  // Factory-recipe options ride the re-exec as --opt key=value flags.
+  for (const [k, v] of Object.entries(m.project.options ?? {})) {
+    extra.push("--opt", `${k}=${v}`);
+  }
   const proc = new Deno.Command("deno", {
     args: ["run", "-A", `${into}/cli.ts`, sub, ...extra, m.project.recipe],
     stdin: "inherit",
@@ -127,9 +131,9 @@ export type UpOutcome = {
 export async function upRecipeFile(
   ref: string,
   override?: TargetOverride,
-  opts: { attached?: boolean; runtimeDir?: string; scripts?: string[]; summarize?: boolean } = {},
+  opts: { attached?: boolean; runtimeDir?: string; scripts?: string[]; summarize?: boolean; options?: RecipeOptions } = {},
 ): Promise<UpOutcome> {
-  const { name, recipe } = await loadRecipe(ref);
+  const { name, recipe } = await loadRecipe(ref, opts.options);
   const extra = opts.scripts?.length ? await loadScripts(opts.scripts) : [];
   const merged = extra.length ? { ...recipe, scripts: [...(recipe.scripts ?? []), ...extra] } : recipe;
   return await upRecipe(name, merged, override, opts);
@@ -284,7 +288,7 @@ export async function upRecipe(
 export async function up(
   arg?: string,
   override?: TargetOverride,
-  opts: { attached?: boolean; runtimeDir?: string; scripts?: string[] } = {},
+  opts: { attached?: boolean; runtimeDir?: string; scripts?: string[]; options?: RecipeOptions } = {},
 ): Promise<number> {
   const input = await resolveInput(arg);
   if (input.kind === "project") return await upProject("up", input.path, opts.scripts);
@@ -296,6 +300,7 @@ export const command = new Command()
   .option("--pods <renderer:string>", "Override recipe target for pods")
   .option("--processes <renderer:string>", "Override recipe target for processes")
   .option("--script <path:string>", "Append a script module to the recipe (repeatable)", { collect: true })
+  .option("--opt <keyvalue:string>", "Pass an option to a factory recipe: key=value (repeatable)", { collect: true })
   .arguments("[input:string]")
   .action(async (opts, arg?: string) => {
     const override: TargetOverride = { pods: opts.pods, processes: opts.processes };
@@ -303,6 +308,10 @@ export const command = new Command()
     if (input.kind === "project") {
       Deno.exit(await upProject("up", input.path, opts.script));
     }
-    const out = await upRecipeFile(input.ref, override, { scripts: opts.script, summarize: true });
+    const out = await upRecipeFile(input.ref, override, {
+      scripts: opts.script,
+      options: parseOpts(opts.opt),
+      summarize: true,
+    });
     Deno.exit(out.code);
   });

@@ -10,6 +10,7 @@ type DeckerProject = {
     into?: string;
   };
   recipe: string;
+  options?: Record<string, unknown>;
   scripts?: string[];
   target?: {
     pods?: string;
@@ -24,10 +25,20 @@ export const project: DeckerProject = {
     into: ".decker",
   },
   recipe: "l1",
-  // Your own script modules, appended after the recipe's scripts (run once the
-  // pods are up). Paths are relative to this file; each module must export
-  // `script: (recipe) => Promise<void> | void`.
-  // scripts: ["./scripts/warmup.ts"],
+  //
+  // Recipe options - e.g. for opstack:
+  // options: {
+  //   l2Fork: "jovian",
+  //   l2BlockTime: 1,
+  //   externalBuilder: "op-rbuilder",
+  // },
+  //
+  // Your own post-up hooks, run after the recipe's own scripts once the pods
+  // are up. Import each module's `Script` at the top of this file and list them:
+  //   import { script as myScript1 } from "./scripts/my-script-1.ts";
+  //   import { script as myScript2 } from "./scripts/my-script-2.ts";
+  // scripts: [myScript1, myScript2],
+  //
   // Override the recipe's renderer targets. Default for pods is "podman";
   // switch to "docker-compose" to run on Docker instead.
   // target: {
