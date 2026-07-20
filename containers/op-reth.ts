@@ -1,5 +1,6 @@
 import type { ContainerDef, ContainerResult, Ctx, Ports } from "../utils/types.ts";
 import { portNum } from "../utils/types.ts";
+import { EL_P2P_SECRET_KEY } from "./bootnode.ts";
 
 // op-reth is the L2 execution engine for Karst and beyond: the Karst upgrade
 // (OP Upgrade 19) ends op-geth support, so from Karst on the sequencer EL is
@@ -27,6 +28,8 @@ export function buildContainer(def: ContainerDef, _ctx: Ctx): ContainerResult {
   const discovery = bootnodeId
     ? ["--bootnodes", `enode://${bootnodeId}@bootnode:30303`, "--rollup.discovery.v4"]
     : ["--disable-discovery"];
+  // Set only by recipes/opstack.ts when op-rbuilder runs as a host process.
+  const hostBuilderP2p = ps.p2p !== undefined;
   return {
     container: {
       image: "us-docker.pkg.dev/oplabs-tools-artifacts/images/op-reth:v2.3.3",
@@ -58,6 +61,7 @@ export function buildContainer(def: ContainerDef, _ctx: Ctx): ContainerResult {
         "--engine.persistence-threshold", "0",
         "--engine.memory-block-buffer-target", "0",
         ...discovery,
+        ...(hostBuilderP2p ? ["--p2p-secret-key-hex", EL_P2P_SECRET_KEY] : []),
       ],
       ports: ps,
       volumeMounts: [

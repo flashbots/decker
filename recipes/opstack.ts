@@ -1,4 +1,4 @@
-import type { Pod, Recipe } from "../utils/types.ts";
+import type { Pod, ProcessDef, Recipe } from "../utils/types.ts";
 import { BOOTNODE_ID } from "../containers/bootnode.ts";
 
 // An OP stack, ported from builder-playground's `opstack` recipe. The artifacts
@@ -17,6 +17,14 @@ export type OpstackOptions = {
   // back to the local EL). Works with all forks — the local EL (op-geth or
   // op-reth) joins the bootnode so the builder peers + gets mempool txs.
   externalBuilder?: string | false; // (default off)
+  // Run op-rbuilder as a HOST PROCESS instead of the pinned container.
+  // A string as a path to a prebuilt op-rbuilder binary; `true` (or the CLI's
+  // `--opt builderBinary=true`) builds it from source on `up` instead.
+  // Moves op-rbuilder from `pods` to `recipe.processes`. The sequencer L2 EL
+  // gets a deterministic p2p identity + its p2p port published to the host so
+  // op-rbuilder can trusted-peer-dial it directly instead of going through the
+  // container-mode bootnode, which the host can't reach. (default off)
+  builderBinary?: string | boolean;
 };
 
 export function recipe(o: OpstackOptions = {}): Recipe {
@@ -24,6 +32,17 @@ export function recipe(o: OpstackOptions = {}): Recipe {
   const l2Fork = o.l2Fork ?? "karst";
   const l2BlockTime = Number(o.l2BlockTime ?? 2);
   const externalBuilder = o.externalBuilder && o.externalBuilder !== "false" ? String(o.externalBuilder) : false;
+
+  // "true" and  CLI's  "true" (`--opt builderBinary=true`) mean "auto-build";
+  // any other string is a path to a prebuilt binary.
+  const builderBinaryOpt = o.builderBinary;
+  const builderHostProcess = builderBinaryOpt !== undefined && builderBinaryOpt !== false && builderBinaryOpt !== "false";
+  const builderBinaryPath = builderHostProcess && builderBinaryOpt !== true && builderBinaryOpt !== "true"
+    ? String(builderBinaryOpt)
+    : undefined;
+  if (builderHostProcess && externalBuilder !== "op-rbuilder") {
+    throw new Error(`opstack: builderBinary requires externalBuilder="op-rbuilder" (got ${externalBuilder || "false"})`);
+  }
 
   // L2 execution client selection. Karst (OP Upgrade 19) ends op-geth support, so
   // from Karst on the L2 EL is op-reth and op-node needs a newer release. Forks
@@ -35,19 +54,39 @@ export function recipe(o: OpstackOptions = {}): Recipe {
   // trace API, op-geth speaks debug_trace*.
   const l2Variant = l2El === "op-reth" ? "erigon" : "geth";
 
-  // With an external builder, op-node drives rollup-boost instead of the EL, and
-  // the local EL joins the bootnode so op-rbuilder can peer + sync the chain.
+  // With an external builder, op-node drives rollup-boost instead of the EL.
+  // Container mode: the local EL joins the bootnode so op-rbuilder can peer +
+  // sync the chain over pod-network discovery. Process mode: discovery can't
+  // cross the host/pod-network boundary, so instead the EL gets a fixed p2p
+  // identity + host-published p2p port for op-rbuilder to trusted-peer-dial
+  // directly.
   const l2Engine = externalBuilder ? "rollup-boost" : l2El;
-  const l2ElConfig = externalBuilder ? { bootnodeId: BOOTNODE_ID } : undefined;
+  const l2ElConfig = builderHostProcess
+    ? { ports: { p2p: { port: 30303, service: false } } }
+    : (externalBuilder ? { bootnodeId: BOOTNODE_ID } : undefined);
   const builderPods: Pod[] = externalBuilder
     ? [
-      { name: "bootnode", containers: [{ name: "bootnode", prototype: "bootnode" }] },
-      { name: "op-rbuilder", containers: [{ name: "op-rbuilder", prototype: "op-rbuilder" }] },
+      // The bootnode is only needed for container mode's discovery-based
+      // peering; a host-process op-rbuilder dials the EL directly (see above).
+      ...(builderHostProcess ? [] : [
+        { name: "bootnode", containers: [{ name: "bootnode", prototype: "bootnode" }] },
+        { name: "op-rbuilder", containers: [{ name: "op-rbuilder", prototype: "op-rbuilder" }] },
+      ]),
       {
         name: "rollup-boost",
         containers: [
           { name: "rollup-boost", prototype: "rollup-boost", refs: { l2: l2El, builder: "op-rbuilder" } },
         ],
+      },
+    ]
+    : [];
+  const builderProcesses: ProcessDef[] = builderHostProcess
+    ? [
+      {
+        name: "op-rbuilder",
+        prototype: "op-rbuilder",
+        refs: { l2: l2El },
+        ...(builderBinaryPath ? { binary: builderBinaryPath } : {}),
       },
     ]
     : [];
@@ -166,5 +205,6 @@ export function recipe(o: OpstackOptions = {}): Recipe {
         ],
       },
     ],
+    ...(builderProcesses.length > 0 ? { processes: builderProcesses } : {}),
   };
 }

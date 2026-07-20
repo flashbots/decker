@@ -1,5 +1,6 @@
 import type { ContainerDef, ContainerResult, Ctx, Ports } from "../utils/types.ts";
 import { portNum } from "../utils/types.ts";
+import { EL_P2P_SECRET_KEY } from "./bootnode.ts";
 
 // op-geth is the L2 execution engine (the sequencer's EL). op-node drives it
 // over the engine API (authrpc). Default ports sit clear of the L1 reth
@@ -28,6 +29,10 @@ export function buildContainer(def: ContainerDef, _ctx: Ctx): ContainerResult {
   const discovery = bootnodeId
     ? `--maxpeers 25 --bootnodes enode://${bootnodeId}@$(getent hosts bootnode | awk '{print $1}'):30303 --discovery.v4`
     : "--maxpeers 0 --nodiscover";
+  // Set only by recipes/opstack.ts when op-rbuilder runs as a host process: the
+  // recipe publishes this EL's p2p port to the host so a deterministic node key
+  // is needed.
+  const hostBuilderP2p = ps.p2p !== undefined;
   // geth init seeds the datadir from the L2 genesis, then exec's the node.
   const script = [
     "geth init --datadir /data_opgeth --state.scheme hash /artifacts/l2-genesis.json",
@@ -49,6 +54,7 @@ export function buildContainer(def: ContainerDef, _ctx: Ctx): ContainerResult {
     "--port 30303",
     "--metrics --metrics.addr 0.0.0.0",
     `--metrics.port ${portNum(ps.metrics)}`,
+    ...(hostBuilderP2p ? [`--nodekeyhex ${EL_P2P_SECRET_KEY}`] : []),
   ].join(" ");
 
   return {
