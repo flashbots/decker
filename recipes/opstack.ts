@@ -25,6 +25,13 @@ export type OpstackOptions = {
   // op-rbuilder can trusted-peer-dial it directly instead of going through the
   // container-mode bootnode, which the host can't reach. (default off)
   builderBinary?: string | boolean;
+  // Enable or tune op-rbuilder flashblocks websocket streaming
+  flashblocks?: boolean | string | {
+    blockTimeMs?: number;
+    endBufferMs?: number;
+    sendOffsetMs?: number;
+    continuousBuild?: boolean;
+  };
 };
 
 export function recipe(o: OpstackOptions = {}): Recipe {
@@ -43,6 +50,16 @@ export function recipe(o: OpstackOptions = {}): Recipe {
   if (builderHostProcess && externalBuilder !== "op-rbuilder") {
     throw new Error(`opstack: builderBinary requires externalBuilder="op-rbuilder" (got ${externalBuilder || "false"})`);
   }
+
+  // Same true/"true" vs. false/"false"/undefined as builderBinary
+  const flashblocksOpt = o.flashblocks;
+  const flashblocksEnabled = flashblocksOpt !== undefined && flashblocksOpt !== false && flashblocksOpt !== "false";
+  const flashblocks = flashblocksEnabled
+    ? (flashblocksOpt === true || flashblocksOpt === "true" ? true : flashblocksOpt)
+    : undefined;
+  // Same value forwarded to both possible op-rbuilder placements below, so
+  // container mode and host-process mode can't tune Flashblocks differently.
+  const builderConfig = flashblocks !== undefined ? { flashblocks } : undefined;
 
   // L2 execution client selection. Karst (OP Upgrade 19) ends op-geth support, so
   // from Karst on the L2 EL is op-reth and op-node needs a newer release. Forks
@@ -70,7 +87,7 @@ export function recipe(o: OpstackOptions = {}): Recipe {
       // peering; a host-process op-rbuilder dials the EL directly (see above).
       ...(builderHostProcess ? [] : [
         { name: "bootnode", containers: [{ name: "bootnode", prototype: "bootnode" }] },
-        { name: "op-rbuilder", containers: [{ name: "op-rbuilder", prototype: "op-rbuilder" }] },
+        { name: "op-rbuilder", containers: [{ name: "op-rbuilder", prototype: "op-rbuilder", config: builderConfig }] },
       ]),
       {
         name: "rollup-boost",
@@ -86,6 +103,7 @@ export function recipe(o: OpstackOptions = {}): Recipe {
         name: "op-rbuilder",
         prototype: "op-rbuilder",
         refs: { l2: l2El },
+        config: builderConfig,
         ...(builderBinaryPath ? { binary: builderBinaryPath } : {}),
       },
     ]

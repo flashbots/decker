@@ -29,8 +29,40 @@ function resolvedPorts(def: ContainerDef | ProcessDef): Ports {
   return { ...ports, ...((def.config?.ports as Ports | undefined) ?? {}) };
 }
 
+type FlashblocksConfig = {
+  blockTimeMs?: number; // --flashblocks.block-time
+  endBufferMs?: number; // --flashblocks.end-buffer-ms
+  sendOffsetMs?: number; // --flashblocks.send-offset-ms (negative sends early)
+  continuousBuild?: boolean; // --flashblocks.continuous-build
+};
+
+const FLASHBLOCKS_DEFAULTS: Required<FlashblocksConfig> = {
+  blockTimeMs: 200,
+  endBufferMs: 75,
+  sendOffsetMs: -30,
+  continuousBuild: true,
+};
+
+// op-rbuilder default for --flashblocks.port
+const FLASHBLOCKS_WS_PORT = 1111;
+
+function flashblocksArgs(opt: boolean | FlashblocksConfig | undefined, wsPort: number): string[] {
+  if (!opt) return [];
+  const cfg = { ...FLASHBLOCKS_DEFAULTS, ...(typeof opt === "object" ? opt : {}) };
+  return [
+    "--flashblocks.addr", "0.0.0.0",
+    "--flashblocks.port", String(wsPort),
+    "--flashblocks.block-time", String(cfg.blockTimeMs),
+    "--flashblocks.end-buffer-ms", String(cfg.endBufferMs),
+    "--flashblocks.send-offset-ms", String(cfg.sendOffsetMs),
+    ...(cfg.continuousBuild ? ["--flashblocks.continuous-build"] : []),
+  ];
+}
+
 export function buildContainer(def: ContainerDef, _ctx: Ctx): ContainerResult {
   const ps = resolvedPorts(def);
+  const flashblocks = def.config?.flashblocks as boolean | FlashblocksConfig | undefined;
+  const fbPort = portNum(ps.flashblocks ?? FLASHBLOCKS_WS_PORT);
   return {
     container: {
       image: "ghcr.io/flashbots/op-rbuilder:v0.4.9",
@@ -55,8 +87,9 @@ export function buildContainer(def: ContainerDef, _ctx: Ctx): ContainerResult {
         "--bootnodes", `enode://${BOOTNODE_ID}@bootnode:30303`,
         "--nat", "none",
         "--rollup.discovery.v4",
+        ...flashblocksArgs(flashblocks, fbPort),
       ],
-      ports: ps,
+      ports: flashblocks ? { ...ps, flashblocks: ps.flashblocks ?? FLASHBLOCKS_WS_PORT } : ps,
       volumeMounts: [
         { name: "artifacts", mountPath: "/artifacts", readOnly: true },
         { name: "data",      mountPath: "/data_op_rbuilder" },
@@ -94,6 +127,8 @@ export function buildProcess(def: ProcessDef, ctx: HostCtx): ProcessResult {
   const dataDir = ctx.dataPath(def.name, "data");
   // The sequencer EL only publishes its p2p port to the host in this mode.
   const elP2pPort = new URL(ctx.url(l2, "p2p")).port;
+  const flashblocks = def.config?.flashblocks as boolean | FlashblocksConfig | undefined;
+  const fbPort = portNum(ps.flashblocks ?? FLASHBLOCKS_WS_PORT);
 
   return {
     process: {
@@ -119,6 +154,7 @@ export function buildProcess(def: ProcessDef, ctx: HostCtx): ProcessResult {
         // don't rely on discovery at all: dial  EL directly by its fixed enode
         "--trusted-peers", `enode://${EL_P2P_ID}@127.0.0.1:${elP2pPort}`,
         "--disable-discovery",
+        ...flashblocksArgs(flashblocks, fbPort),
       ],
     },
     binaryBuild: def.binary ? undefined : BUILD,
