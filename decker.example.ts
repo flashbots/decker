@@ -51,6 +51,8 @@ export const project: DeckerProject = {
   //   l2Fork: "karst",
   //   l2BlockTime: 1,
   //   externalBuilder: "op-rbuilder",
+  //   // Run op-rbuilder as a host process instead of the pinned container
+  //   builderBinary: "../op-rbuilder/target/profiling/op-rbuilder",
   // },
   //
   // Add or override the prototypes the recipe resolves by name — tweak a
