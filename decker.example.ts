@@ -53,6 +53,9 @@ export const project: DeckerProject = {
   //   externalBuilder: "op-rbuilder",
   //   // Run op-rbuilder as a host process instead of the pinned container
   //   builderBinary: "../op-rbuilder/target/profiling/op-rbuilder",
+  //   // Enable op-rbuilder's Flashblocks websocket stream (ws://<host>:1111);
+  //   // pass an object instead of `true` to override individual fields.
+  //   flashblocks: true,
   // },
   //
   // Add or override the prototypes the recipe resolves by name — tweak a
