@@ -110,7 +110,11 @@ function resolveRelayUrl(recipe: Recipe, relay: WarmupRelay): string {
     throw new Error(`relay-warmup: relay ${relay.container} has no port ${DEFAULT_PORT_NAME}`);
   }
   const port = portNum(portSpec as Parameters<typeof portNum>[0]);
-  return `http://localhost:${port}`;
+  // DECKER_RELAY_HOST: reach the relay at a non-local host (e.g. its k8s
+  // Service name when this runs in-cluster). Default preserves the local
+  // port-forward / docker flow.
+  const host = Deno.env.get("DECKER_RELAY_HOST") ?? "localhost";
+  return `http://${host}:${port}`;
 }
 
 async function waitForRelay(url: string, deadlineMs: number): Promise<void> {
