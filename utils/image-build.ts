@@ -3,8 +3,26 @@ import type { ImageBuildSpec, ImageEngine } from "./types.ts";
 import { DECKER_ROOT } from "./root.ts";
 const CACHE_DIR = `${DECKER_ROOT}/cache/images`;
 
+// DECKER_IMAGE_REGISTRY: when set, images built from ImageBuildSpecs are
+// tagged (and referenced by renderers) under this registry prefix, e.g.
+// registry.example.svc:5000 -> registry.example.svc:5000/decker-foo:main.
+// This is what lets rendered manifests run on a real (non-local) cluster:
+// nodes pull from the registry instead of a local image store / kind load.
+// DECKER_IMAGE_MODE: "build" (default) builds missing images locally;
+// "pull" skips building entirely - an external builder (CI or an in-cluster
+// build system) supplies the images, decker only references them.
+export function imageRegistry(): string {
+  return (Deno.env.get("DECKER_IMAGE_REGISTRY") ?? "").replace(/\/+$/, "");
+}
+
+export function imagePullMode(): boolean {
+  return Deno.env.get("DECKER_IMAGE_MODE") === "pull";
+}
+
 export function imageTag(spec: ImageBuildSpec): string {
-  return `decker-${repoBasename(spec.repo)}:${slug(spec.ref)}`;
+  const base = `decker-${repoBasename(spec.repo)}:${slug(spec.ref)}`;
+  const reg = imageRegistry();
+  return reg ? `${reg}/${base}` : base;
 }
 
 function repoBasename(repo: string): string {
@@ -75,6 +93,9 @@ export async function ensureImages(
   specs: Map<string, ImageBuildSpec>,
   engine: ImageEngine,
 ): Promise<string[]> {
+  // pull mode: the registry already holds the images (external builder);
+  // nothing to do locally and no image engine is required.
+  if (imagePullMode()) return [];
   const built: string[] = [];
   for (const [tag, spec] of specs) {
     if (await imageExists(tag, engine)) continue;
