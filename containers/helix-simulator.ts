@@ -2,6 +2,11 @@ import type { ContainerDef, ContainerResult, Ctx, ImageBuildSpec, Ports } from "
 
 const DEFAULT_RPC_PORT = 8555;
 const DEFAULT_AUTHRPC_PORT = 18551;
+// reth's prometheus endpoint, shifted off el-1's 9090 like the ports above
+// (9091 is a common host-side default, so this sits at 9191).
+// Carries the simulator's own gauges too: builder_validation_disallow_size and
+// builder_validation_disallow_hash{hash=…}, which fingerprint the disallow list.
+const DEFAULT_METRICS_PORT = 9191;
 const DEFAULT_RELAY_KEY = "0x64496d4e301e541a6e1237d6ef13a8f8b8b6cb82be9d8ac90073a833dfc2af11";
 // The path the disallow-list server serves under. Whatever container backs
 // refs.blacklist owns this path, so it's config rather than an import — the
@@ -12,6 +17,7 @@ const DEFAULT_IMAGE = "ghcr.io/gattaca-com/helix-simulator:main";
 export const ports: Ports = {
   rpc: DEFAULT_RPC_PORT,
   authrpc: DEFAULT_AUTHRPC_PORT,
+  metrics: DEFAULT_METRICS_PORT,
 };
 
 // Either the published image (default), a pinned tag (config.image), or a build
@@ -27,6 +33,7 @@ export function buildContainer(def: ContainerDef, ctx: Ctx): ContainerResult {
   const rpcPort = (def.config?.rpcPort as number | undefined) ?? DEFAULT_RPC_PORT;
   const authrpcPort = (def.config?.authrpcPort as number | undefined) ?? DEFAULT_AUTHRPC_PORT;
   const relayKey = (def.config?.relayKey as string | undefined) ?? DEFAULT_RELAY_KEY;
+  const metricsPort = (def.config?.metricsPort as number | undefined) ?? DEFAULT_METRICS_PORT;
   // The block-merging flags (collateral map, relay fee recipient, multisend) were
   // dropped from the simulator CLI in gattaca-com/helix#458; clap rejects unknown
   // args, so builds newer than that must pass mergingArgs: false.
@@ -53,6 +60,7 @@ export function buildContainer(def: ContainerDef, ctx: Ctx): ContainerResult {
         "--authrpc.port", String(authrpcPort),
         "--authrpc.jwtsecret", "/artifacts/jwtsecret",
         "--disable-discovery",
+        "--metrics", `0.0.0.0:${metricsPort}`,
         "--enable-ext",
         ...(blacklist ? ["--blacklist-provider", `${ctx.url(blacklist, "http")}${blacklistPath}`] : []),
         ...(mergingArgs
@@ -63,7 +71,7 @@ export function buildContainer(def: ContainerDef, ctx: Ctx): ContainerResult {
           ]
           : []),
       ],
-      ports: { rpc: rpcPort, authrpc: authrpcPort },
+      ports: { rpc: rpcPort, authrpc: authrpcPort, metrics: metricsPort },
       volumeMounts: [
         { name: "artifacts", mountPath: "/artifacts", readOnly: true },
         { name: "sim-data",  mountPath: "/data_sim" },

@@ -1,3 +1,6 @@
+import type { GenesisAlloc } from "../generators/l1/state-root.ts";
+export type { GenesisAccount, GenesisAlloc } from "../generators/l1/state-root.ts";
+
 export type Volume = {
   name: string;
   kind: "shared-readonly" | "ephemeral" | "from-shared";
@@ -120,6 +123,12 @@ export type L1ArtifactsSpec = {
   fork: string;
   blockTimeSeconds?: number;
   genesisDelaySeconds?: number;
+  // Accounts added to the genesis state, keyed by address and shaped like geth's
+  // `alloc` — predeploy a contract at a fixed address, or fund an account beyond
+  // the standard prefunded set. An address already in the template is an error
+  // rather than an overwrite. The genesis state root is computed from the result,
+  // so the CL's genesis state and the EL agree on the genesis block either way.
+  genesisAccounts?: GenesisAlloc;
 };
 
 // OP-stack: an L1 (with the OP system contracts predeployed) plus the L2 genesis

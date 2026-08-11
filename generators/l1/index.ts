@@ -3,6 +3,8 @@ import { renderElGenesis } from "./el-genesis.ts";
 import { renderGenesisSsz } from "./genesis-ssz.ts";
 import { loadBlsKeys } from "./bls-keys.ts";
 import { writeValidatorKeystores } from "./validator-keystores.ts";
+import { allocStateRoot, type GenesisAlloc } from "./state-root.ts";
+import { L1_STATE_ROOT } from "./el-block-hash.ts";
 import {
   DEFAULT_L1_BLOCK_TIME_SECONDS,
   JWT_SECRET,
@@ -15,11 +17,20 @@ import {
 const GENESIS_VALIDATORS_ROOT_HEX =
   "9624293efb019b5252a8be86736907ef1cd263cefc17f4e10bcf7e266d42f02d";
 
+function equalBytes(a: Uint8Array, b: Uint8Array): boolean {
+  return a.length === b.length && a.every((byte, i) => byte === b[i]);
+}
+
 export type GenerateOpts = {
   outDir: string;
   fork: string;
   blockTimeSeconds?: number;
   genesisDelaySeconds?: number;
+  // Accounts added on top of the vendored template's — a contract predeployed at
+  // a fixed address, an extra funded account. The genesis state root is computed
+  // from the result and handed to both the EL genesis and the CL's genesis state,
+  // so the two agree either way.
+  genesisAccounts?: GenesisAlloc;
 };
 
 export type GenerateResult = {
@@ -47,8 +58,20 @@ export async function generate(opts: GenerateOpts): Promise<GenerateResult> {
     await renderClConfig({ blockTimeSeconds, fork }),
   );
 
-  await Deno.writeTextFile(`${outDir}/genesis.json`, await renderElGenesis({ genesisTimeSeconds, fork }));
-  await Deno.writeFile(`${testnetDir}/genesis.ssz`, await renderGenesisSsz({ genesisTimeSeconds, fork }));
+  const el = await renderElGenesis({ genesisTimeSeconds, fork, genesisAccounts: opts.genesisAccounts });
+  const elStateRoot = allocStateRoot(el.alloc);
+  // Without extra accounts the alloc is exactly the vendored template, whose
+  // root is the baked L1_STATE_ROOT — so every run checks the trie code against
+  // a known-good value before anything depends on a computed one.
+  if (!opts.genesisAccounts && !equalBytes(elStateRoot, L1_STATE_ROOT)) {
+    throw new Error("l1 artifacts: computed genesis state root does not match L1_STATE_ROOT");
+  }
+
+  await Deno.writeTextFile(`${outDir}/genesis.json`, el.json);
+  await Deno.writeFile(
+    `${testnetDir}/genesis.ssz`,
+    await renderGenesisSsz({ genesisTimeSeconds, fork, elStateRoot }),
+  );
 
   const keys = await loadBlsKeys();
   await writeValidatorKeystores(`${outDir}/data_validator`, keys);
