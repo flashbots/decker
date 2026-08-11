@@ -1,10 +1,20 @@
 import type { Container, ContainerDef, ContainerResult, Ctx, ImageBuildSpec } from "../utils/types.ts";
 
-const IMAGE: ImageBuildSpec = {
-  repo: "https://github.com/flashbots/mev-boost-relay",
-  ref: "caner/devnet-cold-starts",
-  cmd: "$ENGINE build -t $IMAGE .",
-};
+// Upstream main: the devnet cold-start work (--known-validators, the
+// ENABLE_*/DISABLE_* env switches used below) has landed there, and main also
+// carries BLOCKSIM_RPC_NAMESPACE (#794) for driving a non-flashbots simulator.
+// Override with config.repo / config.ref — but set the same pair on the relay
+// and its housekeeper, or the two build (and run) different images.
+const DEFAULT_REPO = "https://github.com/flashbots/mev-boost-relay";
+const DEFAULT_REF = "main";
+
+function imageSpec(def: ContainerDef): ImageBuildSpec {
+  return {
+    repo: (def.config?.repo as string | undefined) ?? DEFAULT_REPO,
+    ref: (def.config?.ref as string | undefined) ?? DEFAULT_REF,
+    cmd: "$ENGINE build -t $IMAGE .",
+  };
+}
 const BLS_KEYS_FIXTURE = new URL("../generators/l1/bls_keys.json", import.meta.url);
 const DEFAULT_API_PORT = 9062;
 const DEFAULT_SECRET_KEY = "0x5eae315483f028b5cdd5d1090ff0c7618b18737ea9bf3c35047189db22835c48";
@@ -90,9 +100,14 @@ function waitExecScript(pgHostPort: string, redisHostPort: string, binArgs: stri
   ].join("\n");
 }
 
-function shellContainer(env: Record<string, string>, script: string, exposedPorts?: Container["ports"]): Container {
+function shellContainer(
+  def: ContainerDef,
+  env: Record<string, string>,
+  script: string,
+  exposedPorts?: Container["ports"],
+): Container {
   return {
-    image: IMAGE,
+    image: imageSpec(def),
     command: ["/bin/sh", "-c"],
     args: [script],
     env,
@@ -134,6 +149,11 @@ export function buildContainer(def: ContainerDef, ctx: Ctx): ContainerResult {
     // it makes the relay accept the spammer's forged blocks that a real EL would reject.
     ENABLE_IGNORABLE_VALIDATION_ERRORS: "1",
   };
+  // JSON-RPC namespace of the blocksim's validateBuilderSubmissionV* methods. The
+  // relay defaults to "flashbots" (reth/geth builder ext); the helix simulator
+  // serves the same methods under "relay".
+  const simNamespace = def.config?.simNamespace as string | undefined;
+  if (simNamespace) env.BLOCKSIM_RPC_NAMESPACE = simNamespace;
   if (optimistic) {
     // Force every submission onto the optimistic path (bypass the slot==optimisticSlot gate);
     // without it the spammer's slot-stale submissions mostly fall to the pessimistic path.
@@ -143,7 +163,7 @@ export function buildContainer(def: ContainerDef, ctx: Ctx): ContainerResult {
     env.DISABLE_BUILDER_DEMOTION = "1";
   }
   return {
-    container: shellContainer(env, waitExecScript(c.pgHostPort, c.redisHostPort, args), { http: apiPort }),
+    container: shellContainer(def, env, waitExecScript(c.pgHostPort, c.redisHostPort, args), { http: apiPort }),
   };
 }
 
@@ -157,6 +177,6 @@ export function buildHousekeeperContainer(def: ContainerDef, ctx: Ctx): Containe
     "--redis-uri", c.redisUri,
   ];
   return {
-    container: shellContainer(c.forkEnv, waitExecScript(c.pgHostPort, c.redisHostPort, args)),
+    container: shellContainer(def, c.forkEnv, waitExecScript(c.pgHostPort, c.redisHostPort, args)),
   };
 }
