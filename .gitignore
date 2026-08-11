@@ -6,3 +6,5 @@ manifests/
 runtime/
 bin/
 cache/
+
+workspace/
