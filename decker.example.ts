@@ -56,6 +56,9 @@ export const project: DeckerProject = {
   //   // Enable op-rbuilder's Flashblocks websocket stream (ws://<host>:1111);
   //   // pass an object instead of `true` to override individual fields.
   //   flashblocks: true,
+  //   // Add a chain-monitor sidecar watching L1 + L2 for stalled/missed blocks
+  //   // and the builder's known wallet (+ its Flashblocks stream, if enabled).
+  //   chainMonitor: true,
   // },
   //
   // Add or override the prototypes the recipe resolves by name — tweak a

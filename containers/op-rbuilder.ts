@@ -43,8 +43,9 @@ const FLASHBLOCKS_DEFAULTS: Required<FlashblocksConfig> = {
   continuousBuild: true,
 };
 
-// op-rbuilder default for --flashblocks.port
-const FLASHBLOCKS_WS_PORT = 1111;
+// op-rbuilder default for --flashblocks.port. Exported so chain-monitor.ts can
+// reuse it (the static `ports` table above has no "flashblocks" entry).
+export const FLASHBLOCKS_WS_PORT = 1111;
 
 function flashblocksArgs(opt: boolean | FlashblocksConfig | undefined, wsPort: number): string[] {
   if (!opt) return [];
@@ -82,7 +83,7 @@ export function buildContainer(def: ContainerDef, _ctx: Ctx): ContainerResult {
         "--port", "30303",
         "--builder.enable-revert-protection",
         // Builder signing key (1st hardhat account).
-        "--rollup.builder-secret-key", "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+        "--rollup.builder-secret-key", BUILDER_SECRET_KEY,
         // Peer with the sequencer EL through the bootnode so it can sync the chain.
         "--bootnodes", `enode://${BOOTNODE_ID}@bootnode:30303`,
         "--nat", "none",
@@ -114,6 +115,10 @@ const BUILD: BinaryBuildSpec = {
 // the container-mode literal (30303) above: in this mode host port 30303 is
 // already taken by the sequencer EL's published p2p port.
 const PROCESS_P2P_PORT = 30313;
+
+// Builder signing key (1st hardhat/anvil dev account)
+export const BUILDER_SECRET_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+export const BUILDER_ADDRESS = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
 
 function refs(def: ProcessDef) {
   const l2 = def.refs?.l2;
@@ -148,7 +153,7 @@ export function buildProcess(def: ProcessDef, ctx: HostCtx): ProcessResult {
         "--port", String(PROCESS_P2P_PORT),
         "--builder.enable-revert-protection",
         // Builder signing key, same as container mode.
-        "--rollup.builder-secret-key", "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+        "--rollup.builder-secret-key", BUILDER_SECRET_KEY,
         // Rootless podman pod IPs aren't reachable from the host and
         // discovery-advertised addresses are useless across that boundary, so
         // don't rely on discovery at all: dial  EL directly by its fixed enode

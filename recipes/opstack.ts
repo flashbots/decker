@@ -32,6 +32,8 @@ export type OpstackOptions = {
     sendOffsetMs?: number;
     continuousBuild?: boolean;
   };
+  // Add a chain-monitor sidecar that watches L1/L2 + builder wallet.
+  chainMonitor?: boolean | string;
 };
 
 export function recipe(o: OpstackOptions = {}): Recipe {
@@ -40,8 +42,10 @@ export function recipe(o: OpstackOptions = {}): Recipe {
   const l2BlockTime = Number(o.l2BlockTime ?? 2);
   const externalBuilder = o.externalBuilder && o.externalBuilder !== "false" ? String(o.externalBuilder) : false;
 
-  // "true" and  CLI's  "true" (`--opt builderBinary=true`) mean "auto-build";
-  // any other string is a path to a prebuilt binary.
+  // "true" and CLI's "true" (`--opt builderBinary=true`) mean "default";
+  // any other string is a custom config.
+  // For builderBinary/flashblocks/chainMonitor options.
+
   const builderBinaryOpt = o.builderBinary;
   const builderHostProcess = builderBinaryOpt !== undefined && builderBinaryOpt !== false && builderBinaryOpt !== "false";
   const builderBinaryPath = builderHostProcess && builderBinaryOpt !== true && builderBinaryOpt !== "true"
@@ -51,7 +55,6 @@ export function recipe(o: OpstackOptions = {}): Recipe {
     throw new Error(`opstack: builderBinary requires externalBuilder="op-rbuilder" (got ${externalBuilder || "false"})`);
   }
 
-  // Same true/"true" vs. false/"false"/undefined as builderBinary
   const flashblocksOpt = o.flashblocks;
   const flashblocksEnabled = flashblocksOpt !== undefined && flashblocksOpt !== false && flashblocksOpt !== "false";
   const flashblocks = flashblocksEnabled
@@ -60,6 +63,9 @@ export function recipe(o: OpstackOptions = {}): Recipe {
   // Same value forwarded to both possible op-rbuilder placements below, so
   // container mode and host-process mode can't tune Flashblocks differently.
   const builderConfig = flashblocks !== undefined ? { flashblocks } : undefined;
+
+  const chainMonitorOpt = o.chainMonitor;
+  const chainMonitor = chainMonitorOpt !== undefined && chainMonitorOpt !== false && chainMonitorOpt !== "false";
 
   // L2 execution client selection. Karst (OP Upgrade 19) ends op-geth support, so
   // from Karst on the L2 EL is op-reth and op-node needs a newer release. Forks
@@ -107,6 +113,18 @@ export function recipe(o: OpstackOptions = {}): Recipe {
         ...(builderBinaryPath ? { binary: builderBinaryPath } : {}),
       },
     ]
+    : [];
+
+  const chainMonitorPods: Pod[] = chainMonitor
+    ? [{
+      name: "chain-monitor",
+      containers: [{
+        name: "chain-monitor",
+        prototype: "chain-monitor",
+        refs: { l1: "el-1", l2: externalBuilder ? "op-rbuilder" : l2El },
+        config: { l2BlockTimeSeconds: l2BlockTime, flashblocks: externalBuilder ? flashblocks : undefined },
+      }],
+    }]
     : [];
 
   // L1: reth (el-1) + lighthouse beacon/validator produce the settlement chain.
@@ -175,6 +193,8 @@ export function recipe(o: OpstackOptions = {}): Recipe {
           },
         ],
       },
+      // Watches L1 + L2 for stalled/missed blocks, only when opted in.
+      ...chainMonitorPods,
       // --- Block explorers: one Blockscout per layer. Each is a 4-container stack
       // (postgres + verifier + backend + frontend); the two stacks use disjoint
       // host ports. UI URLs print in the `up` summary.
