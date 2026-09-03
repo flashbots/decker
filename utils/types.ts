@@ -40,12 +40,22 @@ export type ImageBuildSpec = {
   cmd: string;
 };
 
-// A host binary built from a git source, the process-side analogue of
-// ImageBuildSpec. `cmd` runs in the clone root; `artifact` is the built
-// binary's path within the clone (e.g. "target/release/reth-rbuilder").
+// A host binary built from source, the process-side analogue of ImageBuildSpec.
+// `cmd` runs in the source root; `artifact` is the built binary's path within it
+// (e.g. "target/release/reth-rbuilder").
+//
+// Two source forms:
+//   • `repo` + `ref` — cloned and pinned under the decker cache. Built once and
+//     reused, since a pinned ref cannot change.
+//   • `path` — an existing working tree, built in place. Used when the thing
+//     being tested is the uncommitted state of a repo, which a pinned ref cannot
+//     name. Always rebuilt: the tree changes between runs and there is no ref to
+//     key a cache on. Cheap in practice — the build tool's own incremental cache
+//     does the real work.
 export type BinaryBuildSpec = {
-  repo: string;
-  ref: string;
+  repo?: string;
+  ref?: string;
+  path?: string;
   cmd: string;
   artifact: string;
 };

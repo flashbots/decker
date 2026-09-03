@@ -1,4 +1,4 @@
-import { basename, dirname } from "jsr:@std/path@^1.0.0";
+import { basename, dirname, resolve } from "jsr:@std/path@^1.0.0";
 import type { BinaryBuildSpec } from "./types.ts";
 
 import { DECKER_ROOT } from "./root.ts";
@@ -17,7 +17,8 @@ function outputPath(spec: BinaryBuildSpec): string {
 }
 
 function relDir(spec: BinaryBuildSpec): string {
-  return `${repoBasename(spec.repo)}-${slug(spec.ref)}`;
+  if (spec.path) return `local-${slug(resolve(spec.path))}`;
+  return `${repoBasename(spec.repo!)}-${slug(spec.ref!)}`;
 }
 
 function repoBasename(repo: string): string {
@@ -56,7 +57,19 @@ async function run(cmd: string[], opts: { cwd?: string } = {}): Promise<void> {
   if (proc.code !== 0) throw new Error(`${cmd.join(" ")} exited with code ${proc.code}`);
 }
 
-async function ensureClone(spec: BinaryBuildSpec): Promise<string> {
+// The directory `spec.cmd` runs in: an existing working tree for a path spec,
+// otherwise a clone pinned to `spec.ref`.
+async function ensureSource(spec: BinaryBuildSpec): Promise<string> {
+  if (spec.path) {
+    const dir = resolve(spec.path);
+    if (!(await dirExists(dir))) {
+      throw new Error(`binary build source ${dir} does not exist`);
+    }
+    return dir;
+  }
+  if (!spec.repo || !spec.ref) {
+    throw new Error("binary build needs either `path` or both `repo` and `ref`");
+  }
   const cloneDir = `${SRC_CACHE}/${repoBasename(spec.repo)}`;
   await Deno.mkdir(SRC_CACHE, { recursive: true });
   if (!(await dirExists(`${cloneDir}/.git`))) {
@@ -72,9 +85,9 @@ async function ensureClone(spec: BinaryBuildSpec): Promise<string> {
 }
 
 async function buildOne(spec: BinaryBuildSpec): Promise<void> {
-  const cloneDir = await ensureClone(spec);
-  await run(["sh", "-c", spec.cmd], { cwd: cloneDir });
-  const artifact = `${cloneDir}/${spec.artifact}`;
+  const srcDir = await ensureSource(spec);
+  await run(["sh", "-c", spec.cmd], { cwd: srcDir });
+  const artifact = `${srcDir}/${spec.artifact}`;
   if (!(await exists(artifact))) {
     throw new Error(`build for ${basename(spec.artifact)} ran but ${spec.artifact} is missing`);
   }
@@ -89,7 +102,9 @@ export async function ensureBinaries(
 ): Promise<string[]> {
   const built: string[] = [];
   for (const spec of specs.values()) {
-    if (await exists(outputPath(spec))) continue;
+    // A pinned ref builds the same bytes every time, so a cached artifact is
+    // final. A working tree does not, so it is rebuilt on every up.
+    if (!spec.path && (await exists(outputPath(spec)))) continue;
     await buildOne(spec);
     built.push(outputPath(spec));
   }
