@@ -86,6 +86,7 @@ export async function emit(
         if (existing) {
           if (
             existing.repo !== spec.repo || existing.ref !== spec.ref ||
+            existing.path !== spec.path ||
             existing.cmd !== spec.cmd || existing.artifact !== spec.artifact
           ) {
             throw new Error(`binary ${path} produced by conflicting BinaryBuildSpec`);
