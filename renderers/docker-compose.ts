@@ -221,6 +221,11 @@ function addPod(
 
     if (isLeader) {
       if (allPorts.length > 0) svc.ports = allPorts;
+      // linux docker engine does not resolve host.docker.internal on its own
+      // (docker desktop does); map it to the host gateway so containers can
+      // reach host processes. only the network-owning container may carry
+      // it: docker rejects host mappings on a network_mode: service peer
+      svc.extra_hosts = [`${HOST_GATEWAY}:host-gateway`];
       if (aliases.length > 0) svc.networks = { default: { aliases } };
     } else {
       svc.network_mode = `service:${leader.def.name}`;
