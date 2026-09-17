@@ -1,6 +1,6 @@
 import { stringify } from "jsr:@std/yaml@^1.0.5";
 import { imageTag } from "../utils/image-build.ts";
-import { lookup, makeCtx } from "../utils/resolve.ts";
+import { buildContainerFor, makeCtx } from "../utils/resolve.ts";
 import { portInService, portNum, portProtocol } from "../utils/types.ts";
 import type {
   ConfigFile,
@@ -86,11 +86,7 @@ function podDocs(pod: Pod, ctx: Ctx, imageBuilds: Map<string, ImageBuildSpec>): 
   };
   const matchLabels = { "app.kubernetes.io/name": pod.name };
 
-  const builds: ContainerBuild[] = pod.containers.map((def) => {
-    const proto = lookup(def.prototype);
-    if (!proto.buildContainer) throw new Error(`container ${def.name} has no buildContainer()`);
-    return { def, built: proto.buildContainer(def, ctx) };
-  });
+  const builds: ContainerBuild[] = pod.containers.map((def) => ({ def, built: buildContainerFor(def, ctx) }));
 
   const volMap = new Map<string, Volume>();
   for (const { built } of builds) {

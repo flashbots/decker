@@ -1,5 +1,5 @@
 import { stringify } from "jsr:@std/yaml@^1.0.5";
-import { lookup, makeCtx } from "../utils/resolve.ts";
+import { buildContainerFor, makeCtx } from "../utils/resolve.ts";
 import { portNum, portProtocol } from "../utils/types.ts";
 import type {
   Ctx,
@@ -130,11 +130,7 @@ function addPod(
   volumes: Record<string, unknown>,
   files: RenderResult["files"],
 ) {
-  const builds = pod.containers.map((def) => {
-    const proto = lookup(def.prototype);
-    if (!proto.buildContainer) throw new Error(`container ${def.name} has no buildContainer()`);
-    return { def, built: proto.buildContainer(def, ctx) };
-  });
+  const builds = pod.containers.map((def) => ({ def, built: buildContainerFor(def, ctx) }));
   const leader = builds[0];
 
   const podVols = new Map<string, Volume>();
