@@ -1,0 +1,76 @@
+diff --git a/src/cli.rs b/src/cli.rs
+index 70255ab..cb39835 100644
+--- a/src/cli.rs
++++ b/src/cli.rs
+@@ -208,6 +208,11 @@ pub struct OrderflowIngressArgs {
+     #[clap(long, env = "SYSTEM_LISTEN_ADDR", id = "SYSTEM_LISTEN_ADDR")]
+     pub system_listen_addr: SocketAddr,
+ 
++    /// Chain ID incoming transactions must carry. Defaults to mainnet; a devnet
++    /// deployment sets its own.
++    #[clap(long, env = "CHAIN_ID", id = "CHAIN_ID", default_value_t = crate::validation::MAINNET_CHAIN_ID)]
++    pub chain_id: u64,
++
+     /// Private key PEM file for client authentication (mTLS)
+     #[clap(long, env = "PRIVATE_KEY_PEM_FILE", id = "PRIVATE_KEY_PEM_FILE")]
+     pub private_key_pem_file: Option<PathBuf>,
+@@ -538,6 +543,7 @@ impl Default for OrderflowIngressArgs {
+         Self {
+             user_listen_addr: SocketAddr::from_str("127.0.0.1:0").unwrap(),
+             system_listen_addr: SocketAddr::from_str("127.0.0.1:0").unwrap(),
++            chain_id: crate::validation::MAINNET_CHAIN_ID,
+             api_keys_file: None,
+             disable_priority_update_ws: false,
+             pamm_quote_stream_max_connections: 100,
+diff --git a/src/main.rs b/src/main.rs
+index 7008d55..4da6724 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -44,6 +44,7 @@ static ALLOC: Allocator = new_allocator();
+ fn main() -> eyre::Result<()> {
+     dotenvy::dotenv().ok();
+     let args = OrderflowIngressArgs::parse();
++    flowproxy::validation::set_chain_id(args.chain_id);
+     flowproxy::profiling::enable_requested(args.flux_profiling)?;
+     init_tracing(args.log_json);
+ 
+diff --git a/src/validation.rs b/src/validation.rs
+index 1819487..84d16c4 100644
+--- a/src/validation.rs
++++ b/src/validation.rs
+@@ -1,3 +1,5 @@
++use std::sync::atomic::{AtomicU64, Ordering};
++
+ use alloy_eips::eip7825::MAX_TX_GAS_LIMIT_OSAKA;
+ use alloy_hardforks::mainnet::MAINNET_OSAKA_TIMESTAMP;
+ use revm_primitives::hardfork::SpecId;
+@@ -5,6 +7,20 @@ use revm_primitives::hardfork::SpecId;
+ /// Mainnet chain ID.
+ pub const MAINNET_CHAIN_ID: u64 = 1;
+ 
++/// Chain ID transactions must carry. Mainnet unless [`set_chain_id`] is called at startup
++/// (`--chain-id` / `CHAIN_ID`), which is what lets a devnet deployment accept its own traffic.
++static EXPECTED_CHAIN_ID: AtomicU64 = AtomicU64::new(MAINNET_CHAIN_ID);
++
++/// Set the chain ID accepted by [`validate_transaction`]. Call once, before serving.
++pub fn set_chain_id(chain_id: u64) {
++    EXPECTED_CHAIN_ID.store(chain_id, Ordering::Relaxed);
++}
++
++/// The chain ID accepted by [`validate_transaction`].
++pub fn expected_chain_id() -> u64 {
++    EXPECTED_CHAIN_ID.load(Ordering::Relaxed)
++}
++
+ /// Maximum initcode to permit in a creation transaction and create instructions.
+ ///
+ /// Limit of maximum initcode size is `2 * MAX_CODE_SIZE`.
+@@ -71,7 +87,7 @@ pub fn validate_transaction(
+ 
+     // Checks for chainid
+     if let Some(chain_id) = transaction.chain_id() {
+-        if chain_id != MAINNET_CHAIN_ID {
++        if chain_id != expected_chain_id() {
+             return Err(ValidationError::ChainIdMismatch);
+         }
+     }

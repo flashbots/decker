@@ -72,7 +72,10 @@ export async function emit(
       for (const [tag, spec] of out.imageBuilds) {
         const existing = imageBuilds.get(tag);
         if (existing) {
-          if (existing.repo !== spec.repo || existing.ref !== spec.ref || existing.cmd !== spec.cmd) {
+          if (
+            existing.repo !== spec.repo || existing.ref !== spec.ref || existing.cmd !== spec.cmd ||
+            existing.name !== spec.name || existing.variant !== spec.variant
+          ) {
             throw new Error(`image tag ${tag} produced by conflicting ImageBuildSpec`);
           }
         } else {

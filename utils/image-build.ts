@@ -20,9 +20,31 @@ export function imagePullMode(): boolean {
 }
 
 export function imageTag(spec: ImageBuildSpec): string {
-  const base = `decker-${repoBasename(spec.repo)}:${slug(spec.ref)}`;
+  const tag = slug(spec.ref) + (spec.variant ? `-${slug(spec.variant)}` : "");
+  const base = `decker-${spec.name ? slug(spec.name) : repoBasename(spec.repo)}:${tag}`;
   const reg = imageRegistry();
   return reg ? `${reg}/${base}` : base;
+}
+
+// assetsVariant hashes decker-owned build inputs under _assets/ (a Dockerfile,
+// patches) into a short tag suffix: FNV-1a 64 over the files' bytes in the
+// given order, first 12 hex chars. ALP mirrors this exact scheme (Go
+// hash/fnv) so its in-cluster builds produce the same tags decker's
+// pull-mode manifests reference. Assets are read relative to this module
+// (bundled into the compiled binary via `make compile`), not DECKER_ROOT,
+// which is the runtime directory and need not hold the repo.
+const ASSETS_DIR = new URL("../_assets/", import.meta.url);
+
+export function assetsVariant(files: string[]): string {
+  let h = 0xcbf29ce484222325n;
+  for (const f of files) {
+    const bytes = Deno.readFileSync(new URL(f, ASSETS_DIR));
+    for (const b of bytes) {
+      h ^= BigInt(b);
+      h = (h * 0x100000001b3n) & 0xffffffffffffffffn;
+    }
+  }
+  return h.toString(16).padStart(16, "0").slice(0, 12);
 }
 
 function repoBasename(repo: string): string {
@@ -72,9 +94,10 @@ async function ensureClone(spec: ImageBuildSpec): Promise<string> {
     } catch { /* fine */ }
     await run(["git", "clone", spec.repo, cloneDir]);
   }
-  await run(["git", "fetch", "origin", spec.ref], { cwd: cloneDir });
-  await run(["git", "checkout", spec.ref], { cwd: cloneDir });
-  await run(["git", "reset", "--hard", `origin/${spec.ref}`], { cwd: cloneDir });
+  // Branches, tags AND commit SHAs: fetch the ref itself and check out what
+  // arrived. `reset --hard origin/<ref>` only ever existed for branches.
+  await run(["git", "fetch", "--force", "origin", spec.ref], { cwd: cloneDir });
+  await run(["git", "checkout", "--force", "--detach", "FETCH_HEAD"], { cwd: cloneDir });
   return cloneDir;
 }
 
@@ -82,7 +105,7 @@ async function buildOne(tag: string, spec: ImageBuildSpec, engine: ImageEngine):
   const cloneDir = await ensureClone(spec);
   await run(["sh", "-c", spec.cmd], {
     cwd: cloneDir,
-    env: { ...Deno.env.toObject(), IMAGE: tag, ENGINE: engine },
+    env: { ...Deno.env.toObject(), IMAGE: tag, ENGINE: engine, DECKER_ROOT },
   });
   if (!(await imageExists(tag, engine))) {
     throw new Error(`build for ${tag} ran but image is not present afterward`);
