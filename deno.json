@@ -1,0 +1,10 @@
+{
+  "lock": "deno.lock",
+  "lint": {
+    "rules": {
+      // decker imports npm:/jsr: specifiers inline by convention; a deno.json
+      // (needed for the lockfile) would otherwise turn this rule on.
+      "exclude": ["no-import-prefix"]
+    }
+  }
+}
