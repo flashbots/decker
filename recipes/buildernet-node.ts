@@ -2,6 +2,7 @@ import type { Recipe } from "../utils/types.ts";
 import type { RecipeOptions } from "../utils/build.ts";
 import { relayWarmup } from "../scripts/relay-warmup.ts";
 import { triePadding } from "../scripts/trie-padding.ts";
+import { BUILDERNET_GENESIS_ACCOUNTS } from "../generators/l1/system-contracts.ts";
 
 // buildernet-node: the `rbuilder` L1 PBS devnet with the builder shaped like a
 // PRODUCTION BuilderNet node (the production node image repo +
@@ -48,7 +49,13 @@ export function recipe(raw: RecipeOptions = {}): Recipe {
     }
   }
   return {
-    artifacts: { generator: "l1", fork: "electra", withdrawals },
+    artifacts: {
+      generator: "l1",
+      fork: "electra",
+      withdrawals,
+      // PaymentForwarder + Prague system contracts (system-contracts.ts)
+      genesisAccounts: BUILDERNET_GENESIS_ACCOUNTS,
+    },
     scripts: [
       // feeRecipient: the relay's validator registrations decide the proposer
       // the builder pays. decker's default is anvil #0 - the builder's own
