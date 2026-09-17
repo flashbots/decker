@@ -110,8 +110,14 @@ export async function generateArtifacts(recipe: Recipe): Promise<void> {
 export async function buildOne(
   target: string,
   options: RecipeOptions = {},
+  override: { pods?: string } = {},
 ): Promise<{ name: string; binaries: string[]; binaryBuilds: string[] }> {
-  const { name, recipe } = await loadRecipe(target, options);
+  let { name, recipe } = await loadRecipe(target, options);
+  // renderer override (build --pods k8s): render for a specific pods
+  // renderer without editing the recipe, mirroring `up --pods`.
+  if (override.pods) {
+    recipe = { ...recipe, target: { ...recipe.target, pods: override.pods } };
+  }
   const { binaries, binaryBuilds } = await emit(name, recipe);
   return { name, binaries, binaryBuilds: [...binaryBuilds.keys()] };
 }
