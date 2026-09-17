@@ -1,3 +1,4 @@
+import { RBUILDER_PRISM_REF, RBUILDER_PRISM_REPO } from "./rbuilder-operator-reth.ts";
 import type { ContainerDef, ContainerResult, Ctx, ImageBuildSpec, Ports } from "../utils/types.ts";
 import { portNum } from "../utils/types.ts";
 import { assetsVariant } from "../utils/image-build.ts";
@@ -11,12 +12,17 @@ import { DEPOSIT_CHAIN_ID } from "../generators/l1/constants.ts";
 // FLOWPROXY_TAG=v2.13.0. Private repo: building needs a GitHub token
 // (`--secret id=gh_token`, the Dockerfile's own contract; nothing is baked
 // into the image).
-export const FLOWPROXY_REPO = "https://github.com/flashbots/the flowproxy repo";
-export const FLOWPROXY_REF = "337db384e6b2cbf0a39017fa1226d587d391c270"; // v2.13.0
+// flowproxy moved into rbuilder-prism (crates/flowproxy, 2026-09-08); production's
+// image still downloads the flowproxy repo v2.13.0 (the production node image repo
+// 2026-09-16) but the source of truth is rbuilder-prism, so build it from the
+// SAME repo/ref as the operator and the gateway.
+export const FLOWPROXY_REPO = RBUILDER_PRISM_REPO;
+export const FLOWPROXY_REF = RBUILDER_PRISM_REF;
 
 // Locally modified build of the pinned ref - two upstream gaps, both with
-// fixes proposed on the flowproxy repo (fix/dockerfile-multiarch):
-//   - Dockerfile.reproducible pins x86_64 -> _assets/flowproxy.Dockerfile
+// fixes proposed on rbuilder-prism (flowproxy/dockerfile-arch-agnostic,
+// flowproxy/configurable-chain-id):
+//   - docker/Dockerfile.flowproxy copies from x86_64 paths -> _assets/flowproxy.Dockerfile
 //   - transactions are validated against a HARDCODED mainnet chain id ->
 //     _assets/flowproxy-0001-configurable-chain-id.patch adds --chain-id/CHAIN_ID
 // `variant` keeps this image's tag distinct from a pristine upstream build.

@@ -11,14 +11,14 @@ import { portNum } from "../utils/types.ts";
 // its builder - rbuilder-operator supervising rbuilder with reth in-process.
 // Pinned to what production runs: the production node image repo
 //  the downloader unit
-// RBUILDER_OPERATOR_RETH_TAG=v1.14.0. Built exactly as rbuilder-prism's own
+// RBUILDER_OPERATOR_RETH_TAG=v1.16.0. Built exactly as rbuilder-prism's own
 // e2e builds it (docker/Dockerfile.rbuilder, RBUILDER_BIN=rbuilder-operator-reth).
 // Bump = change RBUILDER_PRISM_REF (a tag's commit, never a branch) here and in
 // bidding-gateway.ts together: builder and gateway share the ssz
 // GatewayBlockData contract and must come from one tag.
 export const RBUILDER_PRISM_REPO =
   "https://github.com/flashbots/rbuilder-prism";
-export const RBUILDER_PRISM_REF = "8b21c4c64317abc6c64f74ee77d21672f2207a11"; // v1.14.0
+export const RBUILDER_PRISM_REF = "22aa1d5764076b21f86515f73a48a9978ffb1376"; // v1.16.0
 
 export const IMAGE: ImageBuildSpec = {
   repo: RBUILDER_PRISM_REPO,
@@ -133,6 +133,7 @@ priority_update_grpc_server_ip = "0.0.0.0"
 priority_update_grpc_server_port = ${portNum(o.ps.priority)}
 priority_update_simulation_threads = 1
 priority_update_takers_speed_bump_ms = 50
+priority_update_freshness_ms = 12000
 
 extra_data = "${o.extraData}"
 evm_caching_enable = true

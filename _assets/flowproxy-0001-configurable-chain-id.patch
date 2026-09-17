@@ -1,7 +1,7 @@
-diff --git a/src/cli.rs b/src/cli.rs
-index 70255ab..cb39835 100644
---- a/src/cli.rs
-+++ b/src/cli.rs
+diff --git a/crates/flowproxy/src/cli.rs b/crates/flowproxy/src/cli.rs
+index 4d386a5f..89abe4b1 100644
+--- a/crates/flowproxy/src/cli.rs
++++ b/crates/flowproxy/src/cli.rs
 @@ -208,6 +208,11 @@ pub struct OrderflowIngressArgs {
      #[clap(long, env = "SYSTEM_LISTEN_ADDR", id = "SYSTEM_LISTEN_ADDR")]
      pub system_listen_addr: SocketAddr,
@@ -14,7 +14,7 @@ index 70255ab..cb39835 100644
      /// Private key PEM file for client authentication (mTLS)
      #[clap(long, env = "PRIVATE_KEY_PEM_FILE", id = "PRIVATE_KEY_PEM_FILE")]
      pub private_key_pem_file: Option<PathBuf>,
-@@ -538,6 +543,7 @@ impl Default for OrderflowIngressArgs {
+@@ -548,6 +553,7 @@ impl Default for OrderflowIngressArgs {
          Self {
              user_listen_addr: SocketAddr::from_str("127.0.0.1:0").unwrap(),
              system_listen_addr: SocketAddr::from_str("127.0.0.1:0").unwrap(),
@@ -22,29 +22,32 @@ index 70255ab..cb39835 100644
              api_keys_file: None,
              disable_priority_update_ws: false,
              pamm_quote_stream_max_connections: 100,
-diff --git a/src/main.rs b/src/main.rs
-index 7008d55..4da6724 100644
---- a/src/main.rs
-+++ b/src/main.rs
-@@ -44,6 +44,7 @@ static ALLOC: Allocator = new_allocator();
- fn main() -> eyre::Result<()> {
-     dotenvy::dotenv().ok();
-     let args = OrderflowIngressArgs::parse();
-+    flowproxy::validation::set_chain_id(args.chain_id);
-     flowproxy::profiling::enable_requested(args.flux_profiling)?;
-     init_tracing(args.log_json);
- 
-diff --git a/src/validation.rs b/src/validation.rs
-index 1819487..84d16c4 100644
---- a/src/validation.rs
-+++ b/src/validation.rs
+diff --git a/crates/flowproxy/src/lib.rs b/crates/flowproxy/src/lib.rs
+index 5cd2dd66..7d5d4d21 100644
+--- a/crates/flowproxy/src/lib.rs
++++ b/crates/flowproxy/src/lib.rs
+@@ -131,6 +131,10 @@ pub async fn run_with_listeners(
+     cancellation_token: CancellationToken,
+     shutdown: ShutdownCoordinator,
+ ) -> eyre::Result<()> {
++    // Every entry point that takes OrderflowIngressArgs applies its chain id
++    // (run() delegates here; library and test callers too), not just the binary.
++    validation::set_chain_id(args.chain_id);
++
+     // Initialize tracing.
+     let registry = tracing_subscriber::registry().with(
+         EnvFilter::builder()
+diff --git a/crates/flowproxy/src/validation.rs b/crates/flowproxy/src/validation.rs
+index be93ce21..08a76568 100644
+--- a/crates/flowproxy/src/validation.rs
++++ b/crates/flowproxy/src/validation.rs
 @@ -1,3 +1,5 @@
 +use std::sync::atomic::{AtomicU64, Ordering};
 +
  use alloy_eips::eip7825::MAX_TX_GAS_LIMIT_OSAKA;
  use alloy_hardforks::mainnet::MAINNET_OSAKA_TIMESTAMP;
- use revm_primitives::hardfork::SpecId;
-@@ -5,6 +7,20 @@ use revm_primitives::hardfork::SpecId;
+ use revm::primitives::hardfork::SpecId;
+@@ -5,6 +7,20 @@ use revm::primitives::hardfork::SpecId;
  /// Mainnet chain ID.
  pub const MAINNET_CHAIN_ID: u64 = 1;
  
@@ -65,7 +68,7 @@ index 1819487..84d16c4 100644
  /// Maximum initcode to permit in a creation transaction and create instructions.
  ///
  /// Limit of maximum initcode size is `2 * MAX_CODE_SIZE`.
-@@ -71,7 +87,7 @@ pub fn validate_transaction(
+@@ -77,7 +93,7 @@ pub fn validate_transaction(
  
      // Checks for chainid
      if let Some(chain_id) = transaction.chain_id() {

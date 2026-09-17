@@ -18,6 +18,12 @@ import { BUILDERNET_GENESIS_ACCOUNTS } from "../generators/l1/system-contracts.t
 // edge. See ALP's DESIGN-bn-node-arena.md for the full table.
 // anvil dev account #9: prefunded in generators/l1/el-genesis-template.json
 const DEVNET_FEE_RECIPIENT = "0xa0Ee7A142d267C1f36714E4a8F75612F20a79720";
+// mev-boost-relay pinned to a commit (main, 2026-09-17): the container's
+// default is the branch name "main", a mutable image tag - a node that ever
+// pulled it serves its stale copy forever, and an external builder (ALP)
+// cannot know which commit it stands for. Set on the relay AND its
+// housekeeper (same image). ALP mirrors this exact SHA (relayFixture).
+const MEV_BOOST_RELAY_REF = "fddb05e974622396c1f0c03f7285617ba13b6e0f";
 
 // Options (`--opt key=value`, or ALP spec.stackOptions):
 //   rbuilder.<key>=<raw toml value>  override one top-level key of the builder's
@@ -152,6 +158,7 @@ export function recipe(raw: RecipeOptions = {}): Recipe {
           {
             name: "housekeeper-mb-1",
             prototype: "mev-boost-housekeeper",
+            config: { ref: MEV_BOOST_RELAY_REF },
             refs: {
               beacon: "beacon-1",
               postgres: "pg-mb-1",
@@ -161,6 +168,7 @@ export function recipe(raw: RecipeOptions = {}): Recipe {
           {
             name: "mev-boost-relay-1",
             prototype: "mev-boost-relay",
+            config: { ref: MEV_BOOST_RELAY_REF },
             refs: {
               beacon: "beacon-1",
               postgres: "pg-mb-1",
