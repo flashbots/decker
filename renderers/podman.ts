@@ -1,5 +1,5 @@
 import { stringify } from "jsr:@std/yaml@^1.0.5";
-import { findComponent, lookup, makeCtx } from "../utils/resolve.ts";
+import { buildContainerFor, findComponent, makeCtx } from "../utils/resolve.ts";
 import { portNum, portProtocol } from "../utils/types.ts";
 import type {
   ConfigFile,
@@ -118,9 +118,7 @@ function podDocs(pod: Pod, recipe: Recipe, ctx: Ctx, imageBuilds: Map<string, Im
   let hasArtifacts = false;
 
   for (const def of pod.containers) {
-    const proto = lookup(def.prototype);
-    if (!proto.buildContainer) throw new Error(`container ${def.name} has no buildContainer()`);
-    const built = proto.buildContainer(def, ctx);
+    const built = buildContainerFor(def, ctx);
     const c = built.container;
     const vols = built.volumes ?? [];
     const volByName = new Map(vols.map((v) => [v.name, v]));
