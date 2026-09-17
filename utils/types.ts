@@ -38,6 +38,12 @@ export type ImageBuildSpec = {
   repo: string;
   ref: string;
   cmd: string;
+  // Image name when one repo yields several images (default: repo basename).
+  name?: string;
+  // Extra tag suffix for a build whose inputs are more than repo+ref (local
+  // Dockerfile/patches); imageTag appends "-<variant>" so a patched image
+  // never shares the pristine tag.
+  variant?: string;
 };
 
 // A host binary built from source, the process-side analogue of ImageBuildSpec.
@@ -139,6 +145,10 @@ export type L1ArtifactsSpec = {
   // rather than an overwrite. The genesis state root is computed from the result,
   // so the CL's genesis state and the EL agree on the genesis block either way.
   genesisAccounts?: GenesisAlloc;
+  // Validator withdrawal credentials. "eth1" (default): 0x01, so every block
+  // sweeps partial withdrawals (mainnet-like). "none": 0x00 (BLS), no
+  // automatic withdrawals - a bisection lever, not a production shape.
+  withdrawals?: "eth1" | "none";
 };
 
 // OP-stack: an L1 (with the OP system contracts predeployed) plus the L2 genesis

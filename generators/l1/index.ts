@@ -31,6 +31,7 @@ export type GenerateOpts = {
   // from the result and handed to both the EL genesis and the CL's genesis state,
   // so the two agree either way.
   genesisAccounts?: GenesisAlloc;
+  withdrawals?: "eth1" | "none";
 };
 
 export type GenerateResult = {
@@ -70,7 +71,7 @@ export async function generate(opts: GenerateOpts): Promise<GenerateResult> {
   await Deno.writeTextFile(`${outDir}/genesis.json`, el.json);
   await Deno.writeFile(
     `${testnetDir}/genesis.ssz`,
-    await renderGenesisSsz({ genesisTimeSeconds, fork, elStateRoot }),
+    await renderGenesisSsz({ genesisTimeSeconds, fork, elStateRoot, withdrawals: opts.withdrawals }),
   );
 
   const keys = await loadBlsKeys();

@@ -15,7 +15,9 @@ export function buildContainer(def: ContainerDef, ctx: Ctx): ContainerResult {
         "--testnet-dir", "/artifacts/testnet",
         "--init-slashing-protection",
         "--beacon-nodes", ctx.url(beacon, "http"),
-        "--suggested-fee-recipient", "0x690B9A9E9aa1C9dB991C7721a92d351Db4FaC990",
+        // config.feeRecipient overrides the default: a PBS gateway proves the proposer
+        // payment against state, so the recipient must EXIST in genesis (buildernet-node).
+        "--suggested-fee-recipient", (def.config?.feeRecipient as string | undefined) ?? "0x690B9A9E9aa1C9dB991C7721a92d351Db4FaC990",
         "--builder-proposals",
         "--prefer-builder-proposals",
       ],
