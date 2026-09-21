@@ -1,6 +1,7 @@
 import type { ContainerDef, ContainerResult, Ctx, ImageBuildSpec, Ports } from "../utils/types.ts";
 import { portNum } from "../utils/types.ts";
-import { RBUILDER_PRISM_REF, RBUILDER_PRISM_REPO, DEVNET_COINBASE_SECRET_KEY } from "./rbuilder-operator-reth.ts";
+import { DEVNET_BUILDER_AUTH_TOKEN, DEVNET_COINBASE_SECRET_KEY, RBUILDER_PRISM_REF, RBUILDER_PRISM_REPO } from "./rbuilder-operator-reth.ts";
+import { RELAY_BUILDER_PUBKEY } from "./rbuilder.ts";
 
 // bidding-gateway: seals + submits the builder's blocks to relays and holds
 // the relay (BLS) key - the production BuilderNet shape, where nodes ship
@@ -16,18 +17,24 @@ export const IMAGE: ImageBuildSpec = {
 };
 
 export const ports: Ports = {
-  blocks: 6072, // GatewayBlockData ingest from the builder
-  api: 6071, // gateway API (+ slot_info_url, /readyz)
-  metrics: 6065,
+  // production `the collocated gateway`: 6072 block ingest,
+  // 6073 gateway api (+ slot_info_url, /readyz), 6071 metrics
+  blocks: 6072,
+  api: 6073,
+  metrics: 6071,
 };
 
 // Devnet BLS relay key (decker's default builder identity, containers/rbuilder.ts).
+// anvil #0: the address of DEVNET_COINBASE_SECRET_KEY (builder coinbase, payout sender)
+const DEVNET_COINBASE_ADDRESS = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
 const DEVNET_RELAY_SECRET_KEY = "0x25295f0d1d592a90b333e26e85149708208e9f8e8bc18f6c77bd62f8ad7a6866";
 
 export const gatewayConfigFor = (o: { name: string; relayName: string; relayUrl: string; ps: Ports; extraData: string }) => `\
 instance_name = "${o.name}"
 
 listen_addr = "0.0.0.0:${portNum(o.ps.blocks)}"
+# builders authenticate with the shared token (production: BUILDER_AUTH_TOKEN)
+builder_auth_tokens = ["${DEVNET_BUILDER_AUTH_TOKEN}"]
 metrics_addr = "0.0.0.0:${portNum(o.ps.metrics)}"
 gateway_api_addr = "0.0.0.0:${portNum(o.ps.api)}"
 
@@ -67,10 +74,10 @@ max_tbv_to_use_friend_cap_eth = "1"
 
 [bidding.best_competition_bid_selector_cfg]
 excluded_relays_filters = []
-our_builder_pubkeys = []
+our_builder_pubkeys = ["${RELAY_BUILDER_PUBKEY}"]
 ignored_pubkeys = []
-our_fee_recipients = []
-our_extra_datas = []
+our_fee_recipients = ["${DEVNET_COINBASE_ADDRESS}"]
+our_extra_datas = ["${o.extraData}"]
 friend_builder_pubkeys = []
 `;
 
@@ -83,7 +90,7 @@ export function buildContainer(def: ContainerDef, ctx: Ctx): ContainerResult {
     relayName: relay,
     relayUrl: ctx.url(relay, "http"),
     ps,
-    extraData: (def.config?.extraData as string | undefined) ?? "BuilderNet devnet",
+    extraData: (def.config?.extraData as string | undefined) ?? "BuilderNet",
   });
   return {
     container: {

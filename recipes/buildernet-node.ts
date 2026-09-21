@@ -82,8 +82,16 @@ export function recipe(raw: RecipeOptions = {}): Recipe {
           {
             name: "el-1",
             prototype: "rbuilder-operator-reth",
-            refs: { beacon: "beacon-1", gateway: "bidding-gateway-1" },
+            // two gateways, as on the production builders: the collocated one
+            // in this pod (loopback, production's `the collocated gateway`) and the
+            // remote one (bidding-gateway-1, its own pod)
+            refs: { beacon: "beacon-1", gateway: "bidding-gateway-1", localGateway: "gateway-local" },
             config: { rbuilderToml },
+          },
+          {
+            name: "gateway-local",
+            prototype: "bidding-gateway",
+            refs: { relay: "mev-boost-relay-1" },
           },
         ],
       },

@@ -94,15 +94,22 @@ bob_build_duration_deadline_ms = 10
 // Devnet fixtures (NOT secrets): decker's prefunded anvil account #0 as the
 // coinbase - shared with the gateway, which drops any block whose coinbase
 // differs (see bidding-gateway.ts).
+// Builder <-> gateway auth (production: BUILDER_AUTH_TOKEN via env on both
+// sides). A fixed devnet value; the gateway's builder_auth_tokens must list it.
+export const DEVNET_BUILDER_AUTH_TOKEN = "decker-devnet-builder";
+
+// A bidding gateway the builder ships blocks to: production run TWO per
+// builder - one collocated (loopback) and one remote (shared box) - each a
+// [[bidding_gateways]] entry with the same auth token and health polling.
+export type GatewayEndpoint = { name: string; host: string; port: number; apiPort: number };
+
 export const DEVNET_COINBASE_SECRET_KEY =
   "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 
 type Opts = {
   name: string;
   clUrl: string;
-  gatewayHost: string;
-  gatewayBlocksPort: number;
-  gatewayApiPort: number;
+  gateways: GatewayEndpoint[];
   ps: Ports;
   extraData: string;
 };
@@ -155,26 +162,43 @@ live_builders = [${PRODUCTION_BUILDERS.map((b) => `"${b.name}"`).join(", ")}]
 # Built blocks go to the bidding gateway, which seals and submits to relays;
 # the builder has no relay path (relays and bidding_gateways are mutually
 # exclusive since operator v1.6.0).
-[[bidding_gateways]]
-name = "devnet"
-
-[[bidding_gateways.endpoints]]
-host = "${o.gatewayHost}"
-port = ${o.gatewayBlocksPort}
-slot_info_url = "http://${o.gatewayHost}:${o.gatewayApiPort}"
+${o.gateways.map(gatewayBlock).join("\n")}
 
 ${PRODUCTION_BUILDERS.map(builderBlock).join("\n")}`;
+
+// One [[bidding_gateways]] entry, shaped like the production inventory
+// (the production inventory): shared auth
+// token, plaintext, health polling every 2s with a 1s probe timeout.
+function gatewayBlock(g: GatewayEndpoint): string {
+  return `[[bidding_gateways]]
+name = "${g.name}"
+auth_token = "${DEVNET_BUILDER_AUTH_TOKEN}"
+
+[[bidding_gateways.endpoints]]
+host = "${g.host}"
+port = ${g.port}
+use_tls = false
+slot_info_url = "http://${g.host}:${g.apiPort}"
+priority = 0
+health_poll_interval_ms = 2000
+health_probe_timeout_ms = 1000
+health_failure_threshold = 2
+`;
+}
 
 function refs(def: ContainerDef) {
   const beacon = def.refs?.beacon;
   const gateway = def.refs?.gateway;
+  // optional: a bidding-gateway container in the SAME pod, reached on loopback
+  // like production's `the collocated gateway`
+  const localGateway = def.refs?.localGateway;
   if (!beacon) {
     throw new Error(`rbuilder-operator-reth ${def.name}: missing refs.beacon`);
   }
   if (!gateway) {
     throw new Error(`rbuilder-operator-reth ${def.name}: missing refs.gateway`);
   }
-  return { beacon, gateway };
+  return { beacon, gateway, localGateway };
 }
 
 // applyTomlOverrides: `config.rbuilderToml` = { key: rawTomlValue } replaces a
@@ -207,22 +231,30 @@ export function applyTomlOverrides(
 }
 
 export function buildContainer(def: ContainerDef, ctx: Ctx): ContainerResult {
-  const { beacon, gateway } = refs(def);
+  const { beacon, gateway, localGateway } = refs(def);
   const ps: Ports = {
     ...ports,
     ...((def.config?.ports as Ports | undefined) ?? {}),
   };
   const gw = new URL(ctx.url(gateway, "blocks"));
   const gwApi = new URL(ctx.url(gateway, "api"));
+  const gateways: GatewayEndpoint[] = [];
+  if (localGateway) {
+    // same pod -> loopback; the referenced container only supplies the ports
+    gateways.push({
+      name: "local",
+      host: "127.0.0.1",
+      port: Number(new URL(ctx.url(localGateway, "blocks")).port),
+      apiPort: Number(new URL(ctx.url(localGateway, "api")).port),
+    });
+  }
+  gateways.push({ name: "remote", host: gw.hostname, port: Number(gw.port), apiPort: Number(gwApi.port) });
   const toml = operatorRethConfigFor({
     name: def.name,
     clUrl: ctx.url(beacon, "http"),
-    gatewayHost: gw.hostname,
-    gatewayBlocksPort: Number(gw.port),
-    gatewayApiPort: Number(gwApi.port),
+    gateways,
     ps,
-    extraData: (def.config?.extraData as string | undefined) ??
-      "BuilderNet devnet",
+    extraData: (def.config?.extraData as string | undefined) ?? "BuilderNet",
   });
   const tomlFinal = applyTomlOverrides(
     toml,
