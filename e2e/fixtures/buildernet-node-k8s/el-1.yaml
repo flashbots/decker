@@ -1,0 +1,397 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: el-1-config
+  labels:
+    app.kubernetes.io/part-of: decker-l1
+data:
+  rbuilder.toml: |
+    builder_name = "el-1"
+    chain = "/artifacts/genesis.json"
+    genesis_fork_version = "0x20000089"
+    cl_node_url = ["http://beacon-1:3500"]
+    coinbase_secret_key = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+
+    log_json = false
+    log_level = "info,rbuilder=debug"
+    error_storage_path = "/data_reth/rbuilder_errors.sqlite"
+
+    jsonrpc_server_ip = "0.0.0.0"
+    jsonrpc_server_port = 8645
+    full_telemetry_server_ip = "0.0.0.0"
+    full_telemetry_server_port = 6060
+    redacted_telemetry_server_ip = "0.0.0.0"
+    redacted_telemetry_server_port = 6070
+    priority_update_grpc_server_ip = "0.0.0.0"
+    priority_update_grpc_server_port = 8745
+    priority_update_simulation_threads = 1
+    priority_update_takers_speed_bump_ms = 50
+    priority_update_freshness_ms = 12000
+
+    extra_data = "BuilderNet"
+    evm_caching_enable = true
+    faster_finalize = true
+    ignore_blobs = false
+    ignore_cancellable_orders = false
+    max_bob_state_filters = 35
+    max_order_execution_duration_warning_us = 50000
+    require_non_empty_blocklist = false
+    root_hash_use_sparse_trie = true
+    root_hash_sparse_trie_version = "v2"
+    root_hash_threads = 4
+    simulation_threads = 8
+    time_to_keep_mempool_txs_secs = 600
+    watchdog_timeout_sec = 0
+
+    live_builders = ["mp-ordering-25ms", "mgp-ordering-200ms", "mgp-ordering-45-5ms", "type-ordering-200ms", "type-ordering-45-5ms", "mp-ordering-200ms", "mp-ordering-95-5ms", "mp-ordering-45-5ms"]
+
+    # Built blocks go to the bidding gateway, which seals and submits to relays;
+    # the builder has no relay path (relays and bidding_gateways are mutually
+    # exclusive since operator v1.6.0).
+    [[bidding_gateways]]
+    name = "local"
+    auth_token = "decker-devnet-builder"
+
+    [[bidding_gateways.endpoints]]
+    host = "127.0.0.1"
+    port = 6072
+    use_tls = false
+    slot_info_url = "http://127.0.0.1:6073"
+    priority = 0
+    health_poll_interval_ms = 2000
+    health_probe_timeout_ms = 1000
+    health_failure_threshold = 2
+
+    [[bidding_gateways]]
+    name = "remote"
+    auth_token = "decker-devnet-builder"
+
+    [[bidding_gateways.endpoints]]
+    host = "bidding-gateway-1"
+    port = 6072
+    use_tls = false
+    slot_info_url = "http://bidding-gateway-1:6073"
+    priority = 0
+    health_poll_interval_ms = 2000
+    health_probe_timeout_ms = 1000
+    health_failure_threshold = 2
+
+
+    [[builders]]
+    name = "mp-ordering-25ms"
+    algo = "ordering-builder"
+    build_duration_deadline_ms = 25
+    discard_txs = true
+    drop_failed_orders = true
+    failed_order_retries = 1
+    sorting = "max-profit"
+    ignore_mempool_profit_on_bundles = true
+    bob_build_duration_deadline_ms = 10
+
+    [[builders]]
+    name = "mgp-ordering-200ms"
+    algo = "ordering-builder"
+    build_duration_deadline_ms = 200
+    discard_txs = true
+    drop_failed_orders = true
+    failed_order_retries = 1
+    sorting = "mev-gas-price"
+    ignore_mempool_profit_on_bundles = true
+    bob_build_duration_deadline_ms = 10
+
+    [[builders]]
+    name = "mgp-ordering-45-5ms"
+    algo = "ordering-builder"
+    build_duration_deadline_ms = 45
+    pre_filtered_build_duration_deadline_ms = 5
+    discard_txs = true
+    drop_failed_orders = true
+    failed_order_retries = 1
+    sorting = "mev-gas-price"
+    ignore_mempool_profit_on_bundles = true
+    bob_build_duration_deadline_ms = 10
+
+    [[builders]]
+    name = "type-ordering-200ms"
+    algo = "ordering-builder"
+    build_duration_deadline_ms = 200
+    discard_txs = true
+    drop_failed_orders = true
+    failed_order_retries = 1
+    sorting = "type-max-profit"
+    ignore_mempool_profit_on_bundles = true
+    bob_build_duration_deadline_ms = 10
+
+    [[builders]]
+    name = "type-ordering-45-5ms"
+    algo = "ordering-builder"
+    build_duration_deadline_ms = 45
+    pre_filtered_build_duration_deadline_ms = 5
+    discard_txs = true
+    drop_failed_orders = true
+    failed_order_retries = 1
+    sorting = "type-max-profit"
+    ignore_mempool_profit_on_bundles = true
+    bob_build_duration_deadline_ms = 10
+
+    [[builders]]
+    name = "mp-ordering-200ms"
+    algo = "ordering-builder"
+    build_duration_deadline_ms = 200
+    discard_txs = true
+    drop_failed_orders = true
+    failed_order_retries = 1
+    sorting = "max-profit"
+    ignore_mempool_profit_on_bundles = true
+    bob_build_duration_deadline_ms = 10
+
+    [[builders]]
+    name = "mp-ordering-95-5ms"
+    algo = "ordering-builder"
+    build_duration_deadline_ms = 95
+    pre_filtered_build_duration_deadline_ms = 5
+    discard_txs = true
+    drop_failed_orders = true
+    failed_order_retries = 1
+    sorting = "max-profit"
+    ignore_mempool_profit_on_bundles = true
+    bob_build_duration_deadline_ms = 10
+
+    [[builders]]
+    name = "mp-ordering-45-5ms"
+    algo = "ordering-builder"
+    build_duration_deadline_ms = 45
+    pre_filtered_build_duration_deadline_ms = 5
+    discard_txs = true
+    drop_failed_orders = true
+    failed_order_retries = 1
+    sorting = "max-profit"
+    ignore_mempool_profit_on_bundles = true
+    bob_build_duration_deadline_ms = 10
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gateway-local-config
+  labels:
+    app.kubernetes.io/part-of: decker-l1
+data:
+  gateway.toml: |
+    instance_name = "gateway-local"
+
+    listen_addr = "0.0.0.0:6072"
+    # builders authenticate with the shared token
+    builder_auth_tokens = ["decker-devnet-builder"]
+    metrics_addr = "0.0.0.0:6071"
+    gateway_api_addr = "0.0.0.0:6073"
+
+    chain = "/artifacts/genesis.json"
+    genesis_fork_version = "0x20000089"
+
+    # shared with the builder: the gateway drops any block whose coinbase differs
+    coinbase_secret_key = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+    relay_secret_key = "0x25295f0d1d592a90b333e26e85149708208e9f8e8bc18f6c77bd62f8ad7a6866"
+
+    extra_data = "BuilderNet"
+    error_storage_path = "/tmp/gateway-errors.sqlite"
+    log_level = "info,rbuilder=debug"
+    log_color = false
+    skip_relay_substrings = []
+
+    [[relays]]
+    name = "mev-boost-relay-1"
+    url = "http://mev-boost-relay-1:9062"
+    priority = 0
+    use_ssz_for_submit = false
+    use_gzip_for_submit = false
+    mode = "full"
+
+    [bidding.bidding_cfg]
+    coinbase_payment_threshold_eth = "0.0001"
+
+    [bidding.bidding_prediction]
+    static_fallback_ms = -12000
+
+    [bidding.bidding_cfg.seal_instruction_manager_v3_cfg]
+    tbv_portion_share = 0.001
+    bid_jitter = true
+    max_tbv_portion_to_use_against_friends = 0.9
+    non_friend_reward_share = 0.5
+    max_tbv_to_use_friend_cap_eth = "1"
+
+    [bidding.best_competition_bid_selector_cfg]
+    excluded_relays_filters = []
+    our_builder_pubkeys = ["0xa99a76ed7796f7be22d5b7e85deeb7c5677e88e511e0b337618f8c4eb61349b4bf2d153f649f7b53359fe8b94a38e44c"]
+    ignored_pubkeys = []
+    our_fee_recipients = ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"]
+    our_extra_datas = ["BuilderNet"]
+    friend_builder_pubkeys = []
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: el-1
+  labels:
+    app.kubernetes.io/name: el-1
+    app.kubernetes.io/part-of: decker-l1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: el-1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: el-1
+        app.kubernetes.io/part-of: decker-l1
+    spec:
+      containers:
+        - name: el-1
+          image: 'localhost:30500/decker-rbuilder-operator-reth:22aa1d5764076b21f86515f73a48a9978ffb1376'
+          args:
+            - node
+            - '--chain'
+            - /artifacts/genesis.json
+            - '--datadir'
+            - /data_reth
+            - '--color'
+            - never
+            - '--addr'
+            - 0.0.0.0
+            - '--port'
+            - '30303'
+            - '--ipcpath'
+            - /data_reth/reth.ipc
+            - '--http'
+            - '--http.addr'
+            - 0.0.0.0
+            - '--http.api'
+            - 'admin,eth,web3,net,rpc,txpool'
+            - '--http.port'
+            - '8545'
+            - '--ws'
+            - '--ws.addr'
+            - 0.0.0.0
+            - '--ws.port'
+            - '8546'
+            - '--ws.api'
+            - 'eth,web3,net,txpool,debug,trace'
+            - '--ws.origins'
+            - '*'
+            - '--authrpc.port'
+            - '8551'
+            - '--authrpc.addr'
+            - 0.0.0.0
+            - '--authrpc.jwtsecret'
+            - /artifacts/jwtsecret
+            - '--metrics'
+            - '0.0.0.0:9090'
+            - '--disable-discovery'
+            - '-vvv'
+            - '--rbuilder.config'
+            - /config/rbuilder.toml
+          ports:
+            - name: rpc
+              containerPort: 8545
+            - name: ws
+              containerPort: 8546
+            - name: authrpc
+              containerPort: 8551
+            - name: metrics
+              containerPort: 9090
+            - name: jsonrpc
+              containerPort: 8645
+            - name: telemetry
+              containerPort: 6060
+            - name: redacted
+              containerPort: 6070
+            - name: priority
+              containerPort: 8745
+          volumeMounts:
+            - name: artifacts
+              mountPath: /artifacts
+              readOnly: true
+            - name: data
+              mountPath: /data_reth
+            - name: el-1-config
+              mountPath: /config/rbuilder.toml
+              subPath: rbuilder.toml
+              readOnly: true
+        - name: gateway-local
+          image: 'localhost:30500/decker-bidding-gateway:22aa1d5764076b21f86515f73a48a9978ffb1376'
+          args:
+            - '--config'
+            - /config/gateway.toml
+          ports:
+            - name: blocks
+              containerPort: 6072
+            - name: api
+              containerPort: 6073
+            - name: gateway-metrics
+              containerPort: 6071
+          volumeMounts:
+            - name: artifacts
+              mountPath: /artifacts
+              readOnly: true
+            - name: gateway-local-config
+              mountPath: /config/gateway.toml
+              subPath: gateway.toml
+              readOnly: true
+      volumes:
+        - name: artifacts
+          persistentVolumeClaim:
+            claimName: decker-artifacts
+            readOnly: true
+        - name: data
+          emptyDir: {}
+        - name: el-1-config
+          configMap:
+            name: el-1-config
+        - name: gateway-local-config
+          configMap:
+            name: gateway-local-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: el-1
+  labels:
+    app.kubernetes.io/name: el-1
+    app.kubernetes.io/part-of: decker-l1
+spec:
+  selector:
+    app.kubernetes.io/name: el-1
+  ports:
+    - name: rpc
+      port: 8545
+      targetPort: rpc
+    - name: ws
+      port: 8546
+      targetPort: ws
+    - name: authrpc
+      port: 8551
+      targetPort: authrpc
+    - name: metrics
+      port: 9090
+      targetPort: metrics
+    - name: jsonrpc
+      port: 8645
+      targetPort: jsonrpc
+    - name: telemetry
+      port: 6060
+      targetPort: telemetry
+    - name: redacted
+      port: 6070
+      targetPort: redacted
+    - name: priority
+      port: 8745
+      targetPort: priority
+    - name: blocks
+      port: 6072
+      targetPort: blocks
+    - name: api
+      port: 6073
+      targetPort: api
+    - name: gateway-metrics
+      port: 6071
+      targetPort: gateway-metrics

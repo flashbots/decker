@@ -1,0 +1,51 @@
+{
+  "localhost:30500/decker-bidding-gateway:22aa1d5764076b21f86515f73a48a9978ffb1376": {
+    "repo": "https://github.com/flashbots/rbuilder-prism",
+    "ref": "22aa1d5764076b21f86515f73a48a9978ffb1376",
+    "name": "bidding-gateway",
+    "version": "v1.16.0",
+    "dockerfile": "docker/Dockerfile.bidding-gateway",
+    "target": "bidding-gateway-runtime",
+    "secrets": [
+      "gh_token"
+    ],
+    "cmd": "$ENGINE build -f docker/Dockerfile.bidding-gateway --target bidding-gateway-runtime --secret id=gh_token,env=GH_TOKEN -t $IMAGE ."
+  },
+  "localhost:30500/decker-flowproxy:22aa1d5764076b21f86515f73a48a9978ffb1376-b40f8e0a4a19": {
+    "repo": "https://github.com/flashbots/rbuilder-prism",
+    "ref": "22aa1d5764076b21f86515f73a48a9978ffb1376",
+    "name": "flowproxy",
+    "variant": "b40f8e0a4a19",
+    "version": "v1.16.0",
+    "assetDockerfile": "flowproxy.Dockerfile",
+    "assets": [
+      "flowproxy-0001-configurable-chain-id.patch"
+    ],
+    "secrets": [
+      "gh_token"
+    ],
+    "cmd": "$ENGINE build --build-context src=. -f \"$DECKER_ROOT/_assets/flowproxy.Dockerfile\" --secret id=gh_token,env=GH_TOKEN -t $IMAGE \"$DECKER_ROOT/_assets\""
+  },
+  "localhost:30500/decker-mev-boost-relay:fddb05e974622396c1f0c03f7285617ba13b6e0f": {
+    "repo": "https://github.com/flashbots/mev-boost-relay",
+    "ref": "fddb05e974622396c1f0c03f7285617ba13b6e0f",
+    "name": "mev-boost-relay",
+    "dockerfile": "Dockerfile",
+    "cmd": "$ENGINE build -f Dockerfile -t $IMAGE ."
+  },
+  "localhost:30500/decker-rbuilder-operator-reth:22aa1d5764076b21f86515f73a48a9978ffb1376": {
+    "repo": "https://github.com/flashbots/rbuilder-prism",
+    "ref": "22aa1d5764076b21f86515f73a48a9978ffb1376",
+    "name": "rbuilder-operator-reth",
+    "version": "v1.16.0",
+    "dockerfile": "docker/Dockerfile.rbuilder",
+    "target": "rbuilder-runtime",
+    "buildArgs": {
+      "RBUILDER_BIN": "rbuilder-operator-reth"
+    },
+    "secrets": [
+      "gh_token"
+    ],
+    "cmd": "$ENGINE build -f docker/Dockerfile.rbuilder --target rbuilder-runtime --build-arg RBUILDER_BIN=rbuilder-operator-reth --secret id=gh_token,env=GH_TOKEN -t $IMAGE ."
+  }
+}

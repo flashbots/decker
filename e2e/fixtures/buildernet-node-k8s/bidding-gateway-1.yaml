@@ -1,0 +1,126 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bidding-gateway-1-config
+  labels:
+    app.kubernetes.io/part-of: decker-l1
+data:
+  gateway.toml: |
+    instance_name = "bidding-gateway-1"
+
+    listen_addr = "0.0.0.0:6072"
+    # builders authenticate with the shared token
+    builder_auth_tokens = ["decker-devnet-builder"]
+    metrics_addr = "0.0.0.0:6071"
+    gateway_api_addr = "0.0.0.0:6073"
+
+    chain = "/artifacts/genesis.json"
+    genesis_fork_version = "0x20000089"
+
+    # shared with the builder: the gateway drops any block whose coinbase differs
+    coinbase_secret_key = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+    relay_secret_key = "0x25295f0d1d592a90b333e26e85149708208e9f8e8bc18f6c77bd62f8ad7a6866"
+
+    extra_data = "BuilderNet"
+    error_storage_path = "/tmp/gateway-errors.sqlite"
+    log_level = "info,rbuilder=debug"
+    log_color = false
+    skip_relay_substrings = []
+
+    [[relays]]
+    name = "mev-boost-relay-1"
+    url = "http://mev-boost-relay-1:9062"
+    priority = 0
+    use_ssz_for_submit = false
+    use_gzip_for_submit = false
+    mode = "full"
+
+    [bidding.bidding_cfg]
+    coinbase_payment_threshold_eth = "0.0001"
+
+    [bidding.bidding_prediction]
+    static_fallback_ms = -12000
+
+    [bidding.bidding_cfg.seal_instruction_manager_v3_cfg]
+    tbv_portion_share = 0.001
+    bid_jitter = true
+    max_tbv_portion_to_use_against_friends = 0.9
+    non_friend_reward_share = 0.5
+    max_tbv_to_use_friend_cap_eth = "1"
+
+    [bidding.best_competition_bid_selector_cfg]
+    excluded_relays_filters = []
+    our_builder_pubkeys = ["0xa99a76ed7796f7be22d5b7e85deeb7c5677e88e511e0b337618f8c4eb61349b4bf2d153f649f7b53359fe8b94a38e44c"]
+    ignored_pubkeys = []
+    our_fee_recipients = ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"]
+    our_extra_datas = ["BuilderNet"]
+    friend_builder_pubkeys = []
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bidding-gateway-1
+  labels:
+    app.kubernetes.io/name: bidding-gateway-1
+    app.kubernetes.io/part-of: decker-l1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: bidding-gateway-1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: bidding-gateway-1
+        app.kubernetes.io/part-of: decker-l1
+    spec:
+      containers:
+        - name: bidding-gateway-1
+          image: 'localhost:30500/decker-bidding-gateway:22aa1d5764076b21f86515f73a48a9978ffb1376'
+          args:
+            - '--config'
+            - /config/gateway.toml
+          ports:
+            - name: blocks
+              containerPort: 6072
+            - name: api
+              containerPort: 6073
+            - name: metrics
+              containerPort: 6071
+          volumeMounts:
+            - name: artifacts
+              mountPath: /artifacts
+              readOnly: true
+            - name: bidding-gateway-1-config
+              mountPath: /config/gateway.toml
+              subPath: gateway.toml
+              readOnly: true
+      volumes:
+        - name: artifacts
+          persistentVolumeClaim:
+            claimName: decker-artifacts
+            readOnly: true
+        - name: bidding-gateway-1-config
+          configMap:
+            name: bidding-gateway-1-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bidding-gateway-1
+  labels:
+    app.kubernetes.io/name: bidding-gateway-1
+    app.kubernetes.io/part-of: decker-l1
+spec:
+  selector:
+    app.kubernetes.io/name: bidding-gateway-1
+  ports:
+    - name: blocks
+      port: 6072
+      targetPort: blocks
+    - name: api
+      port: 6073
+      targetPort: api
+    - name: metrics
+      port: 6071
+      targetPort: metrics

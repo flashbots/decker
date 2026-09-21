@@ -1,0 +1,124 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: haproxy-1-config
+  labels:
+    app.kubernetes.io/part-of: decker-l1
+data:
+  haproxy.cfg: |
+    global
+      maxconn 32768
+      log stdout format raw local0
+      tune.h2.initial-window-size 1048576
+      tune.h2.fe.max-concurrent-streams 256
+    defaults
+      mode http
+      log global
+      timeout connect 5s
+      timeout client 60s
+      timeout server 60s
+      timeout http-request 10s
+      timeout http-keep-alive 30s
+      compression algo gzip
+      compression type text/html text/plain application/json
+    frontend default
+      bind *:80
+      stick-table type ip size 100k expire 10m store http_req_rate(10s),bytes_in_rate(1m)
+      acl privileged_ip src,map(/etc/haproxy/privileged_ips.map) -m found
+      tcp-request connection track-sc0 src
+      http-request set-var(txn.sender) src,map(/etc/haproxy/privileged_ips.map)
+      http-request deny deny_status 429 hdr Retry-After "60" if !privileged_ip { sc0_bytes_in_rate gt 600000000 }
+      http-request deny deny_status 429 hdr Retry-After "60" if privileged_ip { sc0_bytes_in_rate gt 10000000000 }
+      http-request deny deny_status 429 hdr Retry-After "10" if !privileged_ip { sc0_http_req_rate gt 100 }
+      http-request deny deny_status 429 hdr Retry-After "10" if privileged_ip { sc0_http_req_rate gt 100000 }
+      http-request set-var(txn.sender) src,map(/etc/haproxy/privileged_ips.map,unknown)
+      http-request del-header X-Forwarded-For
+      http-request set-header X-Forwarded-For %[src]
+      http-request del-header X-Flashbots-Source-Name
+      http-request set-header X-Flashbots-Source-Name %[var(txn.sender)]
+      http-request return status 200 content-type text/plain string "OK\n" if { path '/livez' }
+      default_backend user_of
+    frontend system
+      mode tcp
+      bind *:5544
+      default_backend system_of
+    frontend prometheus
+      bind *:8405
+      http-request use-service prometheus-exporter if { path /metrics }
+      no log
+    backend user_of
+      http-reuse always
+      option httpchk GET /livez
+      http-check expect status 200
+      server user_of1 flowproxy-1:5543 check inter 5s fall 3 rise 1
+    backend system_of
+      mode tcp
+      option tcp-check
+      tcp-check send-binary 0200000000000000000450494E47
+      tcp-check expect rstring PONG
+      server system_of1 flowproxy-1:5542 check inter 5s fall 3 rise 1
+  privileged_ips.map: |+
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: haproxy-1
+  labels:
+    app.kubernetes.io/name: haproxy-1
+    app.kubernetes.io/part-of: decker-l1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: haproxy-1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: haproxy-1
+        app.kubernetes.io/part-of: decker-l1
+    spec:
+      containers:
+        - name: haproxy-1
+          image: 'docker.io/library/haproxy:3.0.11-alpine'
+          args:
+            - '-f'
+            - /usr/local/etc/haproxy/haproxy.cfg
+          ports:
+            - name: http
+              containerPort: 80
+            - name: system
+              containerPort: 5544
+            - name: metrics
+              containerPort: 8405
+          volumeMounts:
+            - name: haproxy-1-config
+              mountPath: /usr/local/etc/haproxy/haproxy.cfg
+              subPath: haproxy.cfg
+              readOnly: true
+            - name: haproxy-1-config
+              mountPath: /etc/haproxy/privileged_ips.map
+              subPath: privileged_ips.map
+              readOnly: true
+      volumes:
+        - name: haproxy-1-config
+          configMap:
+            name: haproxy-1-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: haproxy-1
+  labels:
+    app.kubernetes.io/name: haproxy-1
+    app.kubernetes.io/part-of: decker-l1
+spec:
+  selector:
+    app.kubernetes.io/name: haproxy-1
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+    - name: system
+      port: 5544
+      targetPort: system

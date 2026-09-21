@@ -1,9 +1,9 @@
 import type { ContainerDef, ContainerResult, Ctx, Ports } from "../utils/types.ts";
 import { portNum } from "../utils/types.ts";
 
-// haproxy: the production node's edge (the production node image repo
+// haproxy: the production node's edge
 // etc/haproxy/haproxy.cfg.mustache). Same request pipeline - stick-table rate
-// limits with a privileged-ip map, X-Flashbots-Source-Name from the map,
+// limits with a per-source map, the source name taken from that map,
 // /livez, user backend to flowproxy's user listener, tcp system frontend to
 // its system listener - minus what needs production-only state: TLS binds
 // (Let's Encrypt certs on the persistent disk), the ACME/public-cert
@@ -14,7 +14,7 @@ export const ports: Ports = {
   metrics: { port: 8405, service: false },
 };
 
-// production defaults (the production config repo the production config haproxy.*)
+// production defaults
 const LIMITS = {
   bytes_in_rate_regular: "600000000",
   bytes_in_rate_privileged: "10000000000",
@@ -89,7 +89,7 @@ export function buildContainer(def: ContainerDef, ctx: Ctx): ContainerResult {
     systemUrl: ctx.url(flowproxy, "system"),
     ps,
   });
-  // devnet: nobody is privileged; production fills this map from the config plane
+  // devnet: nobody is privileged; production fills this map from its config plane
   const privileged = ((def.config?.privilegedIps as string[] | undefined) ?? []).join("\n") + "\n";
   return {
     container: {

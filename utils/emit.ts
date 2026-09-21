@@ -1,4 +1,5 @@
 import { dirname, isAbsolute } from "jsr:@std/path@^1.0.0";
+import { assetFile, imagesAssets, imagesManifest } from "./image-build.ts";
 import { rendererFor } from "./renderers.ts";
 import type { BinaryBuildSpec, ImageBuildSpec, Recipe, Renderer, RendererPaths } from "./types.ts";
 
@@ -72,10 +73,7 @@ export async function emit(
       for (const [tag, spec] of out.imageBuilds) {
         const existing = imageBuilds.get(tag);
         if (existing) {
-          if (
-            existing.repo !== spec.repo || existing.ref !== spec.ref || existing.cmd !== spec.cmd ||
-            existing.name !== spec.name || existing.variant !== spec.variant
-          ) {
+          if (JSON.stringify(existing) !== JSON.stringify(spec)) {
             throw new Error(`image tag ${tag} produced by conflicting ImageBuildSpec`);
           }
         } else {
@@ -100,6 +98,17 @@ export async function emit(
       }
     }
     if (out.binaries) binaries.push(...out.binaries);
+  }
+
+  // images.json (+ the _assets it names) sits next to the manifests so an
+  // external builder can build exactly the tags the manifests reference. This
+  // is the single source of truth for image pins: nothing downstream should
+  // carry its own copy of a repo/ref.
+  await Deno.writeTextFile(`${manifestDir}/images.json`, imagesManifest(imageBuilds));
+  const assets = imagesAssets(imageBuilds);
+  if (assets.length > 0) {
+    await Deno.mkdir(`${manifestDir}/images-assets`, { recursive: true });
+    for (const a of assets) await Deno.writeFile(`${manifestDir}/images-assets/${a}`, assetFile(a));
   }
 
   await materializeRuntime(manifestDir, runtimeDir);

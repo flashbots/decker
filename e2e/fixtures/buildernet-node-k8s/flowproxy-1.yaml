@@ -1,0 +1,117 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: flowproxy-1-config
+  labels:
+    app.kubernetes.io/part-of: decker-l1
+data:
+  peers.json: |
+    []
+  api-keys.toml: |
+    api_keys = []
+  filter-rules.toml: |
+    rules = []
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flowproxy-1
+  labels:
+    app.kubernetes.io/name: flowproxy-1
+    app.kubernetes.io/part-of: decker-l1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: flowproxy-1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: flowproxy-1
+        app.kubernetes.io/part-of: decker-l1
+    spec:
+      containers:
+        - name: flowproxy-1
+          image: 'localhost:30500/decker-flowproxy:22aa1d5764076b21f86515f73a48a9978ffb1376-b40f8e0a4a19'
+          env:
+            - name: BUILDERNET_NODE_NAME
+              value: flowproxy-1
+            - name: BUILDER_REGION
+              value: us
+            - name: CHAIN_ID
+              value: '1337'
+            - name: USER_LISTEN_ADDR
+              value: '0.0.0.0:5543'
+            - name: SYSTEM_LISTEN_ADDR
+              value: '0.0.0.0:5542'
+            - name: METRICS_ADDR
+              value: '0.0.0.0:8090'
+            - name: BUILDER_ENDPOINT
+              value: 'http://el-1:8645'
+            - name: BUILDER_READY_ENDPOINT
+              value: 'http://el-1:6070'
+            - name: BUILDER_PRIORITY_UPDATE_GRPC_ENDPOINT
+              value: 'http://el-1:8745'
+            - name: FLASHBOTS_ORDERFLOW_SIGNER
+              value: '0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a'
+            - name: FLASHBOTS_ORDERFLOW_SIGNER_ADDRESS
+              value: '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC'
+            - name: STATIC_PEERS
+              value: /config/peers.json
+            - name: API_KEYS_FILE
+              value: /config/api-keys.toml
+            - name: ORDERFLOW_FILTER_RULES_FILE
+              value: /config/filter-rules.toml
+            - name: MAX_BOB_STATE_FILTERS
+              value: '35'
+            - name: HIGH_PRIORITY_RECOVERY_IN_PLACE
+              value: 'false'
+            - name: LOG_JSON
+              value: 'false'
+            - name: RUST_LOG
+              value: info
+          ports:
+            - name: user
+              containerPort: 5543
+            - name: system
+              containerPort: 5542
+            - name: metrics
+              containerPort: 8090
+          volumeMounts:
+            - name: flowproxy-1-config
+              mountPath: /config/peers.json
+              subPath: peers.json
+              readOnly: true
+            - name: flowproxy-1-config
+              mountPath: /config/api-keys.toml
+              subPath: api-keys.toml
+              readOnly: true
+            - name: flowproxy-1-config
+              mountPath: /config/filter-rules.toml
+              subPath: filter-rules.toml
+              readOnly: true
+      volumes:
+        - name: flowproxy-1-config
+          configMap:
+            name: flowproxy-1-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: flowproxy-1
+  labels:
+    app.kubernetes.io/name: flowproxy-1
+    app.kubernetes.io/part-of: decker-l1
+spec:
+  selector:
+    app.kubernetes.io/name: flowproxy-1
+  ports:
+    - name: user
+      port: 5543
+      targetPort: user
+    - name: system
+      port: 5542
+      targetPort: system
+    - name: metrics
+      port: 8090
+      targetPort: metrics

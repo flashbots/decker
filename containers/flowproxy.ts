@@ -1,4 +1,4 @@
-import { RBUILDER_PRISM_REF, RBUILDER_PRISM_REPO } from "./rbuilder-operator-reth.ts";
+import { RBUILDER_PRISM_REF, RBUILDER_PRISM_REPO, RBUILDER_PRISM_VERSION } from "./rbuilder-operator-reth.ts";
 import type { ContainerDef, ContainerResult, Ctx, ImageBuildSpec, Ports } from "../utils/types.ts";
 import { portNum } from "../utils/types.ts";
 import { assetsVariant } from "../utils/image-build.ts";
@@ -7,14 +7,10 @@ import { DEPOSIT_CHAIN_ID } from "../generators/l1/constants.ts";
 // flowproxy: BuilderNet's orderflow ingress. Everything a node receives
 // enters here (users, and other nodes via the system listener), gets
 // validated/rate-shaped and forwarded to the builder's jsonrpc. Pinned to
-// what production runs: the production node image repo (,
-// 2026-09-16) the downloader unit FLOWPROXY_REPO=the flowproxy repo
-// FLOWPROXY_TAG=v2.13.0. Private repo: building needs a GitHub token
+// what production runs. Private repo: building needs a GitHub token
 // (`--secret id=gh_token`, the Dockerfile's own contract; nothing is baked
 // into the image).
-// flowproxy moved into rbuilder-prism (crates/flowproxy, 2026-09-08); production's
-// image still downloads the flowproxy repo v2.13.0 (the production node image repo
-// 2026-09-16) but the source of truth is rbuilder-prism, so build it from the
+// flowproxy lives in rbuilder-prism (crates/flowproxy), so build it from the
 // SAME repo/ref as the operator and the gateway.
 export const FLOWPROXY_REPO = RBUILDER_PRISM_REPO;
 export const FLOWPROXY_REF = RBUILDER_PRISM_REF;
@@ -37,14 +33,17 @@ export function image(): ImageBuildSpec {
     repo: FLOWPROXY_REPO,
     ref: FLOWPROXY_REF,
     name: "flowproxy",
+    version: RBUILDER_PRISM_VERSION,
     variant: assetsVariant(FLOWPROXY_ASSETS),
-    cmd: '$ENGINE build --build-context src=. -f "$DECKER_ROOT/_assets/flowproxy.Dockerfile" --secret id=gh_token,env=GH_TOKEN -t $IMAGE "$DECKER_ROOT/_assets"',
+    assetDockerfile: "flowproxy.Dockerfile",
+    assets: FLOWPROXY_ASSETS.filter((a) => a !== "flowproxy.Dockerfile"),
+    secrets: ["gh_token"],
   };
   return cachedImage;
 }
 
-// Production listens on loopback behind haproxy (user 5543 / system 5542,
-// the production config repo the production config); here the same ports are the pod's,
+// Production listens on loopback behind haproxy (user 5543 / system 5542);
+// here the same ports are the pod's,
 // fronted by the haproxy container. metrics 8090 as in flowproxy.env.
 export const ports: Ports = {
   user: 5543,
@@ -53,7 +52,7 @@ export const ports: Ports = {
 };
 
 // Devnet orderflow signer (NOT a secret): anvil dev account #2. Production
-// derives it from the config plane per node; a single-node devnet trusts itself.
+// provisions one per node; a single-node devnet trusts itself.
 const DEVNET_SIGNER_KEY = "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a";
 const DEVNET_SIGNER_ADDRESS = "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC";
 
@@ -62,7 +61,7 @@ export function buildContainer(def: ContainerDef, ctx: Ctx): ContainerResult {
   if (!builder) throw new Error(`flowproxy ${def.name}: missing refs.builder`);
   const ps: Ports = { ...ports, ...((def.config?.ports as Ports | undefined) ?? {}) };
   // Mirrors production etc/flowproxy/flowproxy.env.mustache key for key,
-  // minus ClickHouse (no sink in a dev env) and the config plane (STATIC_PEERS is
+  // minus ClickHouse (no sink in a dev env) and peer discovery (STATIC_PEERS is
   // the production alternative and a single node has no peers).
   const env: Record<string, string> = {
     BUILDERNET_NODE_NAME: def.name,

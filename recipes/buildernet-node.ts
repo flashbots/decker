@@ -5,8 +5,7 @@ import { triePadding } from "../scripts/trie-padding.ts";
 import { BUILDERNET_GENESIS_ACCOUNTS } from "../generators/l1/system-contracts.ts";
 
 // buildernet-node: the `rbuilder` L1 PBS devnet with the builder shaped like a
-// PRODUCTION BuilderNet node (the production node image repo +
-// the production config repo production, pins as of 2026-09-16):
+// PRODUCTION BuilderNet node:
 //
 //   users -> haproxy-1 :80 -> flowproxy-1 :5543 -> el-1 (rbuilder-operator-reth) :8645
 //   other nodes ------------> haproxy-1 :5544 -> flowproxy-1 :5542
@@ -82,8 +81,8 @@ export function recipe(raw: RecipeOptions = {}): Recipe {
           {
             name: "el-1",
             prototype: "rbuilder-operator-reth",
-            // two gateways, as on the production builders: the collocated one
-            // in this pod (loopback, production's `the collocated gateway`) and the
+            // two gateways, as in production: the collocated one
+            // in this pod (loopback) and the
             // remote one (bidding-gateway-1, its own pod)
             refs: { beacon: "beacon-1", gateway: "bidding-gateway-1", localGateway: "gateway-local" },
             config: { rbuilderToml },

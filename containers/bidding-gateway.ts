@@ -1,6 +1,6 @@
 import type { ContainerDef, ContainerResult, Ctx, ImageBuildSpec, Ports } from "../utils/types.ts";
 import { portNum } from "../utils/types.ts";
-import { DEVNET_BUILDER_AUTH_TOKEN, DEVNET_COINBASE_SECRET_KEY, RBUILDER_PRISM_REF, RBUILDER_PRISM_REPO } from "./rbuilder-operator-reth.ts";
+import { DEVNET_BUILDER_AUTH_TOKEN, DEVNET_COINBASE_SECRET_KEY, RBUILDER_PRISM_REF, RBUILDER_PRISM_REPO, RBUILDER_PRISM_VERSION } from "./rbuilder-operator-reth.ts";
 import { RELAY_BUILDER_PUBKEY } from "./rbuilder.ts";
 
 // bidding-gateway: seals + submits the builder's blocks to relays and holds
@@ -13,11 +13,14 @@ export const IMAGE: ImageBuildSpec = {
   repo: RBUILDER_PRISM_REPO,
   ref: RBUILDER_PRISM_REF,
   name: "bidding-gateway",
-  cmd: "$ENGINE build -f docker/Dockerfile.bidding-gateway --target bidding-gateway-runtime -t $IMAGE .",
+  version: RBUILDER_PRISM_VERSION,
+  dockerfile: "docker/Dockerfile.bidding-gateway",
+  target: "bidding-gateway-runtime",
+  secrets: ["gh_token"], // private repo + private cargo deps
 };
 
 export const ports: Ports = {
-  // production `the collocated gateway`: 6072 block ingest,
+  // the collocated gateway: 6072 block ingest,
   // 6073 gateway api (+ slot_info_url, /readyz), 6071 metrics
   blocks: 6072,
   api: 6073,
@@ -33,7 +36,7 @@ export const gatewayConfigFor = (o: { name: string; relayName: string; relayUrl:
 instance_name = "${o.name}"
 
 listen_addr = "0.0.0.0:${portNum(o.ps.blocks)}"
-# builders authenticate with the shared token (production: BUILDER_AUTH_TOKEN)
+# builders authenticate with the shared token
 builder_auth_tokens = ["${DEVNET_BUILDER_AUTH_TOKEN}"]
 metrics_addr = "0.0.0.0:${portNum(o.ps.metrics)}"
 gateway_api_addr = "0.0.0.0:${portNum(o.ps.api)}"
