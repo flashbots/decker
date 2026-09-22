@@ -42,6 +42,8 @@ export type GenesisSszOpts = {
   // own. Must be the same root fed to the EL client, or CL/EL disagree on the
   // genesis execution block hash and the chain never advances.
   elStateRoot?: Uint8Array;
+  // see L1ArtifactsSpec.withdrawals
+  withdrawals?: "eth1" | "none";
 };
 
 export async function renderGenesisSsz(opts: GenesisSszOpts): Promise<Uint8Array> {
@@ -68,7 +70,9 @@ export async function renderGenesisSsz(opts: GenesisSszOpts): Promise<Uint8Array
   for (const k of blsKeys) {
     const pubkey = fromHex(k.pub);
     const wd = new Uint8Array(32);
-    wd[0] = 0x01;
+    // 0x01 = eth1 address creds (partial withdrawals swept every block);
+    // 0x00 = BLS creds: nothing is ever withdrawable automatically.
+    wd[0] = opts.withdrawals === "none" ? 0x00 : 0x01;
     wd.set(pubkey.slice(0, 20), 12);
     state.validators.push({
       pubkey,

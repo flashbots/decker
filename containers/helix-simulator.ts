@@ -26,7 +26,7 @@ export const ports: Ports = {
 function image(def: ContainerDef): string | ImageBuildSpec {
   const build = def.config?.build as { repo: string; ref: string } | undefined;
   if (!build) return (def.config?.image as string | undefined) ?? DEFAULT_IMAGE;
-  return { repo: build.repo, ref: build.ref, cmd: "$ENGINE build -t $IMAGE -f simulator.Dockerfile ." };
+  return { repo: build.repo, ref: build.ref, dockerfile: "simulator.Dockerfile" };
 }
 
 export function buildContainer(def: ContainerDef, ctx: Ctx): ContainerResult {

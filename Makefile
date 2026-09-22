@@ -1,4 +1,4 @@
-INCLUDES := --include commands --include containers --include generators --include recipes --include renderers --include decker.example.ts
+INCLUDES := --include commands --include containers --include generators --include recipes --include renderers --include _assets --include decker.example.ts
 OUTPUT   ?= decker
 TARGET   ?=
 

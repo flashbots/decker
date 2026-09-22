@@ -12,7 +12,7 @@ function imageSpec(def: ContainerDef): ImageBuildSpec {
   return {
     repo: (def.config?.repo as string | undefined) ?? DEFAULT_REPO,
     ref: (def.config?.ref as string | undefined) ?? DEFAULT_REF,
-    cmd: "$ENGINE build -t $IMAGE .",
+    dockerfile: "Dockerfile",
   };
 }
 const BLS_KEYS_FIXTURE = new URL("../generators/l1/bls_keys.json", import.meta.url);

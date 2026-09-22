@@ -95,6 +95,25 @@ You can evolve `decker` in multiple layers and use in dev or CI setups of your p
 - **Renderers:** Run your recipe on any target (podman, docker, process-compose and anything you want)
 - **CLI:** Hack on the clone, run immediately with preinstalled binary
 
+## Images
+
+A container can name a published image, or pin a source repo and let decker
+build it. A pinned build is described in fields — repo, ref, Dockerfile,
+target, build args, secrets — and `decker build` writes them all to
+`manifests/<recipe>/images.json` beside the rendered manifests, keyed by the
+exact tag those manifests reference. Run the images locally and decker builds
+what is missing; set `DECKER_IMAGE_MODE=pull` and it builds nothing, so CI or
+an in-cluster build system can supply the images from that one file instead of
+keeping its own copy of your pins.
+
+Builds that need files the source repo does not have — a Dockerfile that
+patches it, the patches — name them in `assets` and `assetDockerfile`. They
+live in `_assets/` here, or in your own repo: set `assetsDir` to
+`new URL("../_assets/", import.meta.url).href` and a recipe outside decker
+ships its own build inputs. Those bytes are hashed into the image tag, so a
+patched image never collides with a pristine one, and they are copied next to
+`images.json` for whoever does the building.
+
 ## Why?
 
 Sophisticated tools and their abstraction layers speed up humans but slow down LLM problem solving capabilities and reduce success. In addition, developers often try to fix upstream the tools they depend on, to satisfy their own use-case specific necessities.
