@@ -1,6 +1,6 @@
 import { isAbsolute, join } from "jsr:@std/path@^1.0.0";
 import { portNum } from "./types.ts";
-import type { ContainerDef, Ctx, HostCtx, Pod, ProcessDef, Prototype, PrototypeOverrides, Recipe } from "./types.ts";
+import type { ContainerDef, ContainerResult, Ctx, HostCtx, Pod, ProcessDef, Prototype, PrototypeOverrides, Recipe } from "./types.ts";
 
 import { DECKER_ROOT } from "./root.ts";
 
@@ -103,4 +103,20 @@ export function makeHostCtx(
   binary: (def: ProcessDef, defaultName: string) => string,
 ): HostCtx {
   return { ...makeCtx(recipe, host), artifactsPath, dataPath, configPath, binary };
+}
+
+// Build one container through its prototype, then apply the per-container
+// overrides every prototype supports without special-casing them:
+//   config.image  - replace the prototype's pinned image (a version bump, a
+//                   dev build) from the recipe or an `--opt`, without editing
+//                   the container file. Defaults stay in the prototypes.
+// The renderers all build containers through here, so this is the one place
+// such overrides live.
+export function buildContainerFor(def: ContainerDef, ctx: Ctx): ContainerResult {
+  const proto = lookup(def.prototype);
+  if (!proto.buildContainer) throw new Error(`container ${def.name} has no buildContainer()`);
+  const built = proto.buildContainer(def, ctx);
+  const image = def.config?.image;
+  if (typeof image === "string" && image !== "") built.container.image = image;
+  return built;
 }
