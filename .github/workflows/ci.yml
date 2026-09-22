@@ -10,6 +10,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # the internal-reference check reads this PR's commit messages
+          fetch-depth: 0
       - uses: denoland/setup-deno@v2
         with:
           deno-version: latest
@@ -17,6 +20,10 @@ jobs:
         run: deno lint
       - name: Type-check
         run: deno check $(git ls-files '*.ts')
+      - name: No internal references
+        env:
+          INTERNAL_REF_PATTERNS: ${{ secrets.INTERNAL_REF_PATTERNS }}
+        run: ./scripts/check-internal-refs.sh
 
   e2e:
     # Upstream only: forks (and people vibehacking their clone) skip this so the
