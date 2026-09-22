@@ -16,6 +16,7 @@ async function listRecipes(): Promise<string[]> {
 export const command = new Command()
   .description("Build recipes into manifests/")
   .option("--opt <keyvalue:string>", "Pass an option to a factory recipe: key=value (repeatable)", { collect: true })
+  .option("--pods <renderer:string>", "Render for a specific pods renderer (e.g. k8s) instead of the recipe default")
   .arguments("[recipes...:string]")
   .action(async (opts, ...recipes: string[]) => {
     const options = parseOpts(opts.opt);
@@ -32,7 +33,7 @@ export const command = new Command()
       }
       done(sArt, artifactsLabel(recipe));
       const sp = step(`rendering ${r}`);
-      const { name, binaries, binaryBuilds } = await buildOne(r, options);
+      const { name, binaries, binaryBuilds } = await buildOne(r, options, { pods: opts.pods });
       done(sp, `manifests/${name}/`);
       // Binaries built from source land at `up` time; don't flag them missing here.
       const managed = new Set(binaryBuilds);

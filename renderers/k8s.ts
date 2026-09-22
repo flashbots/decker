@@ -1,4 +1,5 @@
 import { stringify } from "jsr:@std/yaml@^1.0.5";
+import { imageTag } from "../utils/image-build.ts";
 import { lookup, makeCtx } from "../utils/resolve.ts";
 import { portInService, portNum, portProtocol } from "../utils/types.ts";
 import type {
@@ -6,6 +7,7 @@ import type {
   ContainerDef,
   ContainerResult,
   Ctx,
+  ImageBuildSpec,
   Pod,
   Ports,
   Recipe,
@@ -41,12 +43,16 @@ function build(recipe: Recipe, _ctx: RenderCtx): RenderResult {
     }, yamlOpts),
   }];
 
+  // ImageBuildSpec images are reported back so `up` can build (or, in pull
+  // mode, an external builder can supply) them - previously the k8s renderer
+  // referenced images nothing built.
+  const imageBuilds = new Map<string, ImageBuildSpec>();
   for (const pod of recipe.pods) {
-    const docs = podDocs(pod, ctx);
+    const docs = podDocs(pod, ctx, imageBuilds);
     const content = docs.map((d) => stringify(d, yamlOpts)).join("---\n");
     files.push({ relPath: `deploy/${pod.name}.yaml`, content });
   }
-  return { files };
+  return { files, imageBuilds };
 }
 
 function summary(paths: RendererPaths): Array<[string, string]> {
@@ -65,7 +71,15 @@ type ContainerBuild = {
   built: ContainerResult;
 };
 
-function podDocs(pod: Pod, ctx: Ctx): unknown[] {
+// hasRegistryHost: does the image reference start with a registry host
+// (contains "." or ":" in its first path segment, or is "localhost")?
+// Local-only tags cannot be pulled by kubelet and must be IfNotPresent.
+function hasRegistryHost(image: string): boolean {
+  const first = image.split("/")[0];
+  return first.includes(".") || first.includes(":") || first === "localhost";
+}
+
+function podDocs(pod: Pod, ctx: Ctx, imageBuilds: Map<string, ImageBuildSpec>): unknown[] {
   const labels = {
     "app.kubernetes.io/name": pod.name,
     "app.kubernetes.io/part-of": "decker-l1",
@@ -98,6 +112,8 @@ function podDocs(pod: Pod, ctx: Ctx): unknown[] {
 
   const allMounts: VolumeMount[] = builds.flatMap((b) => b.built.container.volumeMounts ?? []);
 
+  const portNames = podPortNames(builds);
+
   const configMapDocs: unknown[] = [];
   const configVolumes: unknown[] = [];
   const containers = builds.map(({ def, built }) => {
@@ -120,11 +136,25 @@ function podDocs(pod: Pod, ctx: Ctx): unknown[] {
         configMap: { name: configMountName },
       });
     }
-    const ports = expandDeployPorts(c.ports);
+    const ports = expandDeployPorts(def.name, c.ports, portNames);
     const env = c.env ? Object.entries(c.env).map(([name, value]) => ({ name, value })) : [];
+    // built-from-source images: reference by the canonical build tag (the
+    // same one `up`/an external builder produces), registry-prefixed when
+    // DECKER_IMAGE_REGISTRY is set. Local-only tags get IfNotPresent so
+    // kubelet uses the loaded image instead of trying to pull.
+    let image: string;
+    let pullPolicy: string | undefined;
+    if (typeof c.image === "string") {
+      image = c.image;
+    } else {
+      image = imageTag(c.image);
+      imageBuilds.set(image, c.image);
+      if (!hasRegistryHost(image)) pullPolicy = "IfNotPresent";
+    }
     return {
       name: def.name,
-      image: typeof c.image === "string" ? c.image : `decker-${def.name}`,
+      image,
+      ...(pullPolicy ? { imagePullPolicy: pullPolicy } : {}),
       ...(c.command ? { command: c.command } : {}),
       ...(c.args ? { args: c.args } : {}),
       ...(env.length > 0 ? { env } : {}),
@@ -155,7 +185,7 @@ function podDocs(pod: Pod, ctx: Ctx): unknown[] {
     },
   ];
 
-  const servicePorts = collectServicePorts(builds);
+  const servicePorts = collectServicePorts(builds, portNames);
   if (servicePorts.length > 0) {
     docs.push({
       apiVersion: "v1",
@@ -170,31 +200,55 @@ function podDocs(pod: Pod, ctx: Ctx): unknown[] {
   return docs;
 }
 
-function expandDeployPorts(ports: Ports | undefined) {
+// Port names must be unique across the whole pod (k8s validates containerPort
+// names pod-wide, and Service targetPort refers to them by name), but decker
+// containers freely reuse names like "http" and "metrics". Assign each
+// (container, port) a pod-unique name <= 15 chars: the raw name if free, else
+// prefixed with as much of the container name as fits.
+function podPortNames(builds: ContainerBuild[]): Map<string, string> {
+  const used = new Set<string>();
+  const out = new Map<string, string>();
+  for (const { def, built } of builds) {
+    for (const name of Object.keys(built.container.ports ?? {})) {
+      let candidate = name;
+      if (used.has(candidate)) {
+        const room = Math.max(15 - name.length - 1, 1);
+        candidate = `${def.name.slice(0, room)}-${name}`.slice(0, 15);
+      }
+      let i = 0;
+      while (used.has(candidate)) candidate = `${candidate.slice(0, 14)}${i++}`;
+      used.add(candidate);
+      out.set(`${def.name}/${name}`, candidate);
+    }
+  }
+  return out;
+}
+
+function expandDeployPorts(defName: string, ports: Ports | undefined, portNames: Map<string, string>) {
   if (!ports) return [];
   return Object.entries(ports).map(([name, spec]) => {
     const protocol = portProtocol(spec);
     return {
-      name,
+      name: portNames.get(`${defName}/${name}`) ?? name,
       containerPort: portNum(spec),
       ...(protocol ? { protocol } : {}),
     };
   });
 }
 
-function collectServicePorts(builds: ContainerBuild[]) {
-  const seen = new Set<string>();
+function collectServicePorts(builds: ContainerBuild[], portNames: Map<string, string>) {
+  const seen = new Set<number>();
   const out: { name: string; port: number; targetPort: string }[] = [];
-  for (const { built } of builds) {
+  for (const { def, built } of builds) {
     const ports = built.container.ports;
     if (!ports) continue;
     for (const [name, spec] of Object.entries(ports)) {
       if (!portInService(spec)) continue;
-      if (seen.has(name)) {
-        throw new Error(`duplicate service port name ${name}`);
-      }
-      seen.add(name);
-      out.push({ name, port: portNum(spec), targetPort: name });
+      const num = portNum(spec);
+      if (seen.has(num)) continue; // same numeric port twice in one pod: first wins
+      seen.add(num);
+      const unique = portNames.get(`${def.name}/${name}`) ?? name;
+      out.push({ name: unique, port: num, targetPort: unique });
     }
   }
   return out;
