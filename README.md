@@ -95,6 +95,10 @@ You can evolve `decker` in multiple layers and use in dev or CI setups of your p
 - **Renderers:** Run your recipe on any target (podman, docker, process-compose and anything you want)
 - **CLI:** Hack on the clone, run immediately with preinstalled binary
 
+Images can be pinned to a source repo and built by decker, or supplied by an
+external builder from the `images.json` a build emits — see
+[notes/images.md](notes/images.md).
+
 ## Why?
 
 Sophisticated tools and their abstraction layers speed up humans but slow down LLM problem solving capabilities and reduce success. In addition, developers often try to fix upstream the tools they depend on, to satisfy their own use-case specific necessities.

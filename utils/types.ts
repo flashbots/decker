@@ -34,10 +34,47 @@ export function portInService(p: PortSpec): boolean {
   return typeof p === "number" ? true : p.service !== false;
 }
 
+// An image built from a pinned source repo. The build is described in
+// STRUCTURED fields, not as a shell line: the docker/podman command is derived
+// from them (utils/image-build.ts buildCommand), and the same fields are
+// emitted to manifests/<recipe>/images.json so an external builder - CI, or an
+// in-cluster buildkit - can reproduce the build without parsing a shell string.
+// `cmd` remains as an escape hatch for a build no field combination expresses.
 export type ImageBuildSpec = {
   repo: string;
   ref: string;
-  cmd: string;
+  // Image name when one repo yields several images (default: repo basename).
+  name?: string;
+  // Extra tag suffix for a build whose inputs are more than repo+ref (local
+  // Dockerfile/patches); imageTag appends "-<variant>" so a patched image
+  // never shares the pristine tag.
+  variant?: string;
+  // The human name of `ref` (a release tag like "v1.16.0", or a branch name).
+  // Never used to address the image - refs stay commit SHAs so a tag cannot
+  // move under us - but it travels in images.json so a UI can show "v1.16.0"
+  // beside the hash instead of the hash alone.
+  version?: string;
+  // Dockerfile path inside the repo (default "Dockerfile").
+  dockerfile?: string;
+  // Dockerfile that lives OUTSIDE the source repo, in the assets dir. Wins over
+  // `dockerfile`: the repo is then a named build context (`src`) instead of the
+  // build context, which is how a patched build reaches the repo's sources.
+  assetDockerfile?: string;
+  // Other asset files the build reads (patches the Dockerfile applies). Both
+  // kinds of asset feed `variant` via assetsVariant.
+  assets?: string[];
+  // Where those files live. Default: decker's own _assets/. A recipe outside
+  // decker points at its own directory - `new URL("../_assets/",
+  // import.meta.url).href`, or an absolute path - and owns its build inputs
+  // without adding them to decker.
+  assetsDir?: string;
+  target?: string;
+  buildArgs?: Record<string, string>;
+  // Build secret ids; each is read from the equally named env var upper-cased
+  // ("gh_token" -> $GH_TOKEN) and passed as --secret, never baked in.
+  secrets?: string[];
+  // Escape hatch: a full shell build line, overriding everything derived.
+  cmd?: string;
 };
 
 // A host binary built from source, the process-side analogue of ImageBuildSpec.
@@ -139,6 +176,10 @@ export type L1ArtifactsSpec = {
   // rather than an overwrite. The genesis state root is computed from the result,
   // so the CL's genesis state and the EL agree on the genesis block either way.
   genesisAccounts?: GenesisAlloc;
+  // Validator withdrawal credentials. "eth1" (default): 0x01, so every block
+  // sweeps partial withdrawals (mainnet-like). "none": 0x00 (BLS), no
+  // automatic withdrawals - a bisection lever, not a production shape.
+  withdrawals?: "eth1" | "none";
 };
 
 // OP-stack: an L1 (with the OP system contracts predeployed) plus the L2 genesis
